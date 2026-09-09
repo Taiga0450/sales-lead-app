@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f5f2;
+  --foreground: #1c1a24;
+  --surface: #ffffff;
+  --border: #e7e2da;
+  --brand: #0eb0ce;
+  --brand-light: #e3f6fa;
+  --ink: #3a3a3a;
+  --accent: #0d9488;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
+  --color-brand-light: var(--brand-light);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-noto-sans-jp);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), "Hiragino Sans", "Yu Gothic", sans-serif;
+}
+
+/* カーソルを合わせた操作要素（ボタン・リンク・アコーディオン見出し）が
+   浮き上がって見えるよう、アプリ全体で共通のホバー演出を適用する。 */
+button:not(:disabled),
+a[href],
+summary {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+button:not(:disabled):hover,
+a[href]:hover,
+summary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.18);
+}
