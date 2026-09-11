@@ -671,8 +671,12 @@ function DealCard({
             </div>
           </div>
 
-          {deal.source === "hubspot" && (
+          {deal.source === "hubspot" ? (
             <TaskSection dealId={deal.id} owners={owners} defaultOwnerName={form.ownerName} />
+          ) : (
+            <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-2.5 text-xs text-foreground/40">
+              この医療機関はHubSpot上の取引とまだ連携されていないため、タスクを追加できません。
+            </p>
           )}
         </div>
       )}
