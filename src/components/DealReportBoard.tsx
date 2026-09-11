@@ -81,6 +81,88 @@ const TASK_PRIORITY_OPTIONS: Array<{ value: "NONE" | "LOW" | "MEDIUM" | "HIGH"; 
 ];
 
 /**
+ * シートのみに登録されていてHubSpotの取引をまだ持っていない商談を、今表示中の内容のまま
+ * HubSpot上に新規の取引として作成し、以後はその取引と連携させる（タスク追加もできるようになる）。
+ */
+function LinkHubSpotButton({
+  dealId,
+  form,
+  owners,
+  onLinked,
+}: {
+  dealId: string;
+  form: HearingListItem;
+  owners: Array<{ ownerId: string; name: string }>;
+  onLinked: () => void;
+}) {
+  const [linking, setLinking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleClick() {
+    if (!form.dealname.trim()) {
+      setError("医療機関名を入力してください");
+      return;
+    }
+    const ownerId = owners.find((o) => form.ownerName && o.name.startsWith(form.ownerName))?.ownerId;
+    if (!ownerId) {
+      setError("先に取引担当者を選択してください");
+      return;
+    }
+    setLinking(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/deal-report/${dealId}/link-hubspot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealname: form.dealname.trim(),
+          ownerId,
+          category: form.category,
+          probability: form.probability,
+          plan: form.plan,
+          product: form.product,
+          chart: form.chart,
+          chartTranscribed: form.chartTranscribed,
+          expectedRevenue: form.expectedRevenue,
+          area: form.area,
+          firstMeetingDate: form.firstMeetingDate,
+          patientsPerMonth: form.patientsPerMonth,
+          callsPerMonth: form.callsPerMonth,
+          visitsPerMonth: form.visitsPerMonth,
+          hearingNotes: form.hearingNotes,
+          dealStage: form.dealStage,
+          contractDate: form.contractDate,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "連携に失敗しました");
+      onLinked();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "連携に失敗しました");
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-dashed border-border p-4">
+      <p className="mb-2 text-xs text-foreground/50">
+        この医療機関はHubSpot上の取引とまだ連携されていないため、タスクを追加できません。今表示されている内容でHubSpotに取引を新規作成し、連携できます。
+      </p>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={linking}
+        className="rounded-lg border border-brand px-3 py-1.5 text-xs font-medium text-brand hover:bg-brand-light disabled:opacity-50"
+      >
+        {linking ? "連携中..." : "HubSpotに連携する"}
+      </button>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+/**
  * HubSpotの「取引 → アクティビティー → その他 → タスク」と同じ項目で、この商談（Deal）に
  * 紐づくタスクを作成する。折りたたみ式で、「+ タスクを追加」を押すと開く。
  * リマインダー・繰り返し・キューはHubSpot側でも高度な設定のため対象外。
@@ -261,10 +343,12 @@ function DealCard({
   deal,
   owners,
   onDeleted,
+  onLinked,
 }: {
   deal: HearingListItem;
   owners: Array<{ ownerId: string; name: string }>;
   onDeleted: () => void;
+  onLinked: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(deal);
@@ -674,9 +758,7 @@ function DealCard({
           {deal.source === "hubspot" ? (
             <TaskSection dealId={deal.id} owners={owners} defaultOwnerName={form.ownerName} />
           ) : (
-            <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-2.5 text-xs text-foreground/40">
-              この医療機関はHubSpot上の取引とまだ連携されていないため、タスクを追加できません。
-            </p>
+            <LinkHubSpotButton dealId={form.id} form={form} owners={owners} onLinked={onLinked} />
           )}
         </div>
       )}
@@ -1464,7 +1546,13 @@ export default function DealReportBoard({
 
       <div className="flex flex-col gap-3">
         {pageItems.map((deal) => (
-          <DealCard key={deal.id} deal={deal} owners={owners} onDeleted={() => router.refresh()} />
+          <DealCard
+            key={deal.id}
+            deal={deal}
+            owners={owners}
+            onDeleted={() => router.refresh()}
+            onLinked={() => router.refresh()}
+          />
         ))}
         {filtered.length === 0 && (
           <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-foreground/40">

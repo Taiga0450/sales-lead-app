@@ -55,9 +55,18 @@ export async function POST(request: Request) {
     try {
       await upsertDealHearingRowForDeal(accessToken, deal, owner.name.split(/[\s　]/)[0] ?? owner.name);
     } catch (sheetErr) {
-      // HubSpot側の作成/更新自体は成功しているため、シート登録の失敗はログのみに留める
-      // （一覧に出ないだけで、データの喪失にはならない——HubSpot上には反映済み）。
+      // ここで失敗を握りつぶすと、HubSpot上には商談が作成されているのに、この画面の一覧には
+      // 一切出てこない（＝ユーザーからは「新規作成してもHub情報が反映されない」ように見える）
+      // という分かりにくい状態になる。エラーとして返し、もう一度「追加する」を試すよう促す
+      // （同名で再実行すればfindDealIdByNameが今作ったHubSpot Dealを見つけて再連携される）。
       console.error("sheet upsert failed after HubSpot deal upsert", sheetErr);
+      return NextResponse.json(
+        {
+          error:
+            "HubSpot上には商談を作成できましたが、一覧への反映に失敗しました。もう一度「追加する」をお試しください（重複作成にはなりません）。",
+        },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({ deal });
