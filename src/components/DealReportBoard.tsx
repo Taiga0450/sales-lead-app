@@ -40,6 +40,9 @@ const PROBABILITY_LABELS: Record<string, string> = {
 const PLAN_OPTIONS = ["1stcall", "2ndcallチケット", "2ndcallスポット", "callコネクト", "医師会プラン"];
 const PRODUCT_OPTIONS = ["ON CALL", "ON CALL connect", "人材紹介", "振り込み代行", "シェアレジ"];
 
+/** 1ページに表示する商談件数。全件を一度に表示すると件数が多いときに見づらいため、ページ送りする。 */
+const DEAL_PAGE_SIZE = 30;
+
 /** GET /api/deal-report/search が返すHubSpot Deal検索結果（表示に必要な項目だけ）。 */
 interface HubspotSearchResult {
   id: string;
@@ -1050,6 +1053,20 @@ export default function DealReportBoard({
     return sortDir === "asc" ? sorted : sorted.reverse();
   }, [items, search, sortKey, sortDir, periodField, periodFrom, periodTo, dateInPeriod, stageFilter, ownerFilter]);
 
+  // 絞り込み・検索・並び替えの条件が変わったら1ページ目に戻す（前のページ番号のまま
+  // 該当件数が減ると空白ページが表示されてしまうため）。
+  const [page, setPage] = useState(1);
+  const filterSignature = JSON.stringify([search, sortKey, sortDir, periodField, periodFrom, periodTo, stageFilter, ownerFilter]);
+  const [prevFilterSignature, setPrevFilterSignature] = useState(filterSignature);
+  if (filterSignature !== prevFilterSignature) {
+    setPrevFilterSignature(filterSignature);
+    setPage(1);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / DEAL_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filtered.slice((currentPage - 1) * DEAL_PAGE_SIZE, currentPage * DEAL_PAGE_SIZE);
+
   // 確定売上: 取引ステージが「クローズ済み」の商談の見込み売上合計。契約締結日で判定すると、
   // 契約締結日をまだ入力していない過去のクローズ済み商談が漏れてしまう（CurrentPeriodStatusと同じ考え方）。
   const confirmedRevenue = filtered
@@ -1442,7 +1459,7 @@ export default function DealReportBoard({
       )}
 
       <div className="flex flex-col gap-3">
-        {filtered.map((deal) => (
+        {pageItems.map((deal) => (
           <DealCard key={deal.id} deal={deal} owners={owners} onDeleted={() => router.refresh()} />
         ))}
         {filtered.length === 0 && (
@@ -1451,6 +1468,35 @@ export default function DealReportBoard({
           </p>
         )}
       </div>
+
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-between rounded-2xl border border-border bg-surface px-5 py-3 shadow-sm">
+          <span className="text-xs text-foreground/50">
+            {(currentPage - 1) * DEAL_PAGE_SIZE + 1}〜{Math.min(currentPage * DEAL_PAGE_SIZE, filtered.length)}件 / 全{filtered.length}件
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
+            >
+              ◀ 前へ
+            </button>
+            <span className="text-xs text-foreground/50">
+              {currentPage} / {totalPages}ページ
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
+            >
+              次へ ▶
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
