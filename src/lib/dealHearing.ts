@@ -128,7 +128,7 @@ export function dealHearingRowToListItem(row: DealHearingRow): HearingListItem {
     plan: row.plan,
     product: row.product,
     chart: row.chart,
-    chartTranscribed: row.chartTranscribed === "" ? null : row.chartTranscribed.toLowerCase() === "true",
+    chartTranscribed: !row.chartTranscribed ? null : row.chartTranscribed.toLowerCase() === "true",
     expectedRevenue: num(row.expectedRevenue),
     area: row.area,
     firstMeetingDate: row.firstMeetingDate,

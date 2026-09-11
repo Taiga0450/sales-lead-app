@@ -275,6 +275,9 @@ const PHASE_ROW_STYLE: Record<string, string> = {
 
 const GRID_COLS = "grid-cols-[110px_100px_1.7fr_1.3fr_110px_1.3fr]";
 
+/** 1ページに表示するリード件数。全件を一度に表示すると件数が多いときに見づらいため、ページ送りする。 */
+const PAGE_SIZE = 30;
+
 /**
  * 一覧の行をクリックすると、別ページ（/leads/[id]）に遷移せずその場でカードが開き、
  * 詳細ページにあった項目（担当者・住所・メール・登録日・情報ソース・リサーチ・削除）を
@@ -543,6 +546,30 @@ export default function LeadTable({
     inferredEmailByAssignee,
   ]);
 
+  // 絞り込み・検索・並び替えの条件が変わったら1ページ目に戻す（前のページ番号のまま
+  // 該当件数が減ると空白ページが表示されてしまうため）。
+  const [page, setPage] = useState(1);
+  const filterSignature = JSON.stringify([
+    statusFilter,
+    callFilter,
+    regionFilter,
+    keyword,
+    assigneeFilter,
+    calledFrom,
+    calledTo,
+    sortKey,
+    sortDir,
+  ]);
+  const [prevFilterSignature, setPrevFilterSignature] = useState(filterSignature);
+  if (filterSignature !== prevFilterSignature) {
+    setPrevFilterSignature(filterSignature);
+    setPage(1);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   const [exporting, setExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
 
@@ -628,7 +655,7 @@ export default function LeadTable({
           </button>
         </div>
 
-        <span className="ml-auto text-xs text-foreground/50">{filtered.length}件表示</span>
+        <span className="ml-auto text-xs text-foreground/50">該当{filtered.length}件</span>
         <button
           type="button"
           onClick={handleExport}
@@ -696,7 +723,7 @@ export default function LeadTable({
       </div>
 
       <div className="flex flex-col">
-        {filtered.map((lead) => (
+        {pageItems.map((lead) => (
           <LeadListRow
             key={lead.id}
             lead={lead}
@@ -711,6 +738,35 @@ export default function LeadTable({
           </div>
         )}
       </div>
+
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-between border-t border-border px-5 py-3">
+          <span className="text-xs text-foreground/50">
+            {(currentPage - 1) * PAGE_SIZE + 1}〜{Math.min(currentPage * PAGE_SIZE, filtered.length)}件 / 全{filtered.length}件
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
+            >
+              ◀ 前へ
+            </button>
+            <span className="text-xs text-foreground/50">
+              {currentPage} / {totalPages}ページ
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
+            >
+              次へ ▶
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

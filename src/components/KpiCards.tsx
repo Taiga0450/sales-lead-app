@@ -1,6 +1,6 @@
 import type { LeadRow } from "@/lib/leads";
 
-function KpiCard({
+export function KpiCard({
   label,
   value,
   tone = "default",

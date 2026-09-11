@@ -73,16 +73,25 @@ function phaseCountRow(items: HearingListItem[]): PhaseCountRow {
 export interface PeriodBreakdown {
   key: string;
   label: string;
+  /** この期間の対象商談一覧（初回商談完了日の古い順）。定例ミーティングで1件ずつ確認・報告するための一覧。 */
+  items: HearingListItem[];
   /** 関東全体（森・富田の合計）の内訳。 */
   overall: PhaseCountRow;
   /** 担当者ごと（森・富田それぞれ）の内訳。 */
   byOwner: Array<{ owner: string } & PhaseCountRow>;
 }
 
+function sortByFirstMeetingDate(items: HearingListItem[]): HearingListItem[] {
+  return [...items].sort((a, b) =>
+    a.firstMeetingDate < b.firstMeetingDate ? -1 : a.firstMeetingDate > b.firstMeetingDate ? 1 : 0,
+  );
+}
+
 function buildBreakdown(items: HearingListItem[], key: string, label: string): PeriodBreakdown {
   return {
     key,
     label,
+    items: sortByFirstMeetingDate(items),
     overall: phaseCountRow(items),
     byOwner: DEAL_OWNERS.map((owner) => ({ owner, ...phaseCountRow(items.filter((item) => item.ownerName === owner)) })),
   };
@@ -107,17 +116,15 @@ export function rangeSummaryFor(items: HearingListItem[], startDate: string, end
   const rangeItems = items.filter(
     (item) => item.firstMeetingDate >= rangeStart && item.firstMeetingDate <= rangeEnd,
   );
-  const sorted = [...rangeItems].sort((a, b) =>
-    a.firstMeetingDate < b.firstMeetingDate ? -1 : a.firstMeetingDate > b.firstMeetingDate ? 1 : 0,
-  );
   const label = `${formatMD(rangeStart)}〜${formatMD(rangeEnd)}`;
+  const breakdown = buildBreakdown(rangeItems, `${rangeStart}|${rangeEnd}`, label);
 
   return {
     startDate: rangeStart,
     endDate: rangeEnd,
     label,
-    items: sorted,
-    breakdown: buildBreakdown(rangeItems, `${rangeStart}|${rangeEnd}`, label),
+    items: breakdown.items,
+    breakdown,
   };
 }
 

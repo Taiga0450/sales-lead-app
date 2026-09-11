@@ -14,6 +14,7 @@ import {
 } from "@/lib/salesMeetingStats";
 import DealStageBar from "./DealStageBar";
 import Gauge from "./Gauge";
+import { KpiCard } from "./KpiCards";
 import PeriodNavigator from "./PeriodNavigator";
 import SectionTabs from "./SectionTabs";
 
@@ -110,6 +111,57 @@ function HalfTargetProgress({ breakdown, target }: { breakdown: PeriodBreakdown;
   );
 }
 
+/**
+ * 商談の一覧をカレンダー期間で絞ったもの。定例ミーティングで1件ずつ確認・報告できるよう、
+ * 選択期間・月次・四半期・半期のどのタブでも同じ形式で使う（BreakdownTable/RangeSectionで共用）。
+ */
+function DealItemList({ items }: { items: HearingListItem[] }) {
+  if (items.length === 0) {
+    return <p className="px-5 py-10 text-center text-sm text-foreground/40">この期間の商談はありません</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <div
+        className={`grid ${DEAL_ROW_GRID} gap-3 border-b border-border bg-brand-light/10 px-5 py-2 text-xs font-medium text-foreground/50`}
+      >
+        <span>商談日</span>
+        <span>病院名</span>
+        <span>検討プラン</span>
+        <span>カルテ</span>
+        <span>患者数/月</span>
+        <span>往診/月</span>
+        <span>エリア</span>
+        <span>フェーズ</span>
+      </div>
+      <div className="flex flex-col">
+        {items.map((item) => (
+          <details key={item.id} className="group border-b border-border last:border-0">
+            <summary
+              className={`grid ${DEAL_ROW_GRID} cursor-pointer list-none items-center gap-3 px-5 py-3 text-sm hover:bg-brand-light/20`}
+            >
+              <span className="text-foreground/60">{item.firstMeetingDate || "—"}</span>
+              <span className="truncate font-medium">
+                {item.dealname}
+                <span className="ml-2 text-xs font-normal text-foreground/40">{item.ownerName}</span>
+              </span>
+              <span className="truncate text-foreground/70">{item.plan || "—"}</span>
+              <span className="truncate text-foreground/70">{item.chart || "—"}</span>
+              <span className="text-foreground/70">{num(item.callsPerMonth)}</span>
+              <span className="text-foreground/70">{num(item.visitsPerMonth)}</span>
+              <span className="truncate text-foreground/70">{item.area || "—"}</span>
+              <DealStageBar stage={item.dealStage} compact />
+            </summary>
+            <div className="border-t border-border bg-brand-light/10 px-5 py-3">
+              <p className="mb-1 text-xs font-semibold text-foreground/50">ヒアリングメモ</p>
+              <p className="whitespace-pre-wrap text-sm text-foreground/80">{item.hearingNotes || "（記録なし）"}</p>
+            </div>
+          </details>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function RangeSection({ range }: { range: RangeMeetingGroup }) {
   return (
     <div className="flex flex-col gap-4">
@@ -126,49 +178,7 @@ function RangeSection({ range }: { range: RangeMeetingGroup }) {
           </div>
         </div>
 
-        {range.items.length === 0 ? (
-          <p className="px-5 py-10 text-center text-sm text-foreground/40">この期間の商談はありません</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <div
-              className={`grid ${DEAL_ROW_GRID} gap-3 border-b border-border bg-brand-light/10 px-5 py-2 text-xs font-medium text-foreground/50`}
-            >
-              <span>商談日</span>
-              <span>病院名</span>
-              <span>検討プラン</span>
-              <span>カルテ</span>
-              <span>患者数/月</span>
-              <span>往診/月</span>
-              <span>エリア</span>
-              <span>フェーズ</span>
-            </div>
-            <div className="flex flex-col">
-              {range.items.map((item) => (
-                <details key={item.id} className="group border-b border-border last:border-0">
-                  <summary
-                    className={`grid ${DEAL_ROW_GRID} cursor-pointer list-none items-center gap-3 px-5 py-3 text-sm hover:bg-brand-light/20`}
-                  >
-                    <span className="text-foreground/60">{item.firstMeetingDate}</span>
-                    <span className="truncate font-medium">
-                      {item.dealname}
-                      <span className="ml-2 text-xs font-normal text-foreground/40">{item.ownerName}</span>
-                    </span>
-                    <span className="truncate text-foreground/70">{item.plan || "—"}</span>
-                    <span className="truncate text-foreground/70">{item.chart || "—"}</span>
-                    <span className="text-foreground/70">{num(item.callsPerMonth)}</span>
-                    <span className="text-foreground/70">{num(item.visitsPerMonth)}</span>
-                    <span className="truncate text-foreground/70">{item.area || "—"}</span>
-                    <DealStageBar stage={item.dealStage} compact />
-                  </summary>
-                  <div className="border-t border-border bg-brand-light/10 px-5 py-3">
-                    <p className="mb-1 text-xs font-semibold text-foreground/50">ヒアリングメモ</p>
-                    <p className="whitespace-pre-wrap text-sm text-foreground/80">{item.hearingNotes || "（記録なし）"}</p>
-                  </div>
-                </details>
-              ))}
-            </div>
-          </div>
-        )}
+        <DealItemList items={range.items} />
       </div>
 
       <RevenueSummary breakdown={range.breakdown} />
@@ -176,7 +186,11 @@ function RangeSection({ range }: { range: RangeMeetingGroup }) {
   );
 }
 
-/** 関東全体（合計）行を太字で強調し、その下に担当者（森・富田）ごとの内訳行を並べるテーブル。 */
+/**
+ * 関東全体（合計）行を太字で強調し、その下に担当者（森・富田）ごとの内訳行を並べるテーブル。
+ * その下に、この期間の対象商談を1件ずつ確認できる一覧（DealItemList）を続けて表示する——
+ * 定例ミーティングで件数・売上を見るだけでなく、案件ごとにフィードバックしていく流れのため。
+ */
 function BreakdownTable({ breakdown }: { breakdown: PeriodBreakdown }) {
   return (
     <div className="flex flex-col gap-4">
@@ -224,6 +238,14 @@ function BreakdownTable({ breakdown }: { breakdown: PeriodBreakdown }) {
         </div>
       </div>
 
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+        <div className="border-b border-border bg-brand-light/40 px-5 py-3">
+          <h3 className="font-bold">対象商談一覧</h3>
+          <p className="text-xs text-foreground/50">1件ずつ確認・フィードバックする際にお使いください</p>
+        </div>
+        <DealItemList items={breakdown.items} />
+      </div>
+
       <RevenueSummary breakdown={breakdown} />
     </div>
   );
@@ -253,6 +275,15 @@ export default function SalesMeetingBoard({
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <KpiCard label={`対象件数（${currentHalf.label}）`} value={currentHalf.overall.total} tone="brand" />
+        <KpiCard label="初回商談" value={currentHalf.overall.counts.初回商談} />
+        <KpiCard label="見積提出" value={currentHalf.overall.counts.見積提出} />
+        <KpiCard label="口頭受注" value={currentHalf.overall.counts.口頭受注} tone="success" />
+        <KpiCard label="クローズ済み" value={currentHalf.overall.counts.クローズ済み} tone="success" />
+        <KpiCard label="失注" value={currentHalf.overall.counts.失注} tone="danger" />
+      </div>
+
       <HalfTargetProgress breakdown={currentHalf} target={currentHalfTarget} />
 
       <PeriodNavigator startDate={range.start} endDate={range.end} onChange={setRange} />

@@ -250,7 +250,9 @@ function toHearingContent(deal: HubspotHearingDeal): DealHearingContent {
     product: p[HEARING_PROPERTIES.product] ?? "",
     chart: p[HEARING_PROPERTIES.chart] ?? "",
     chartTranscribed:
-      p[HEARING_PROPERTIES.chartTranscribed] === undefined || p[HEARING_PROPERTIES.chartTranscribed] === ""
+      // HubSpotは未設定のプロパティをnullで返すことがある（undefinedではない）ため、
+      // == nullでnull/undefinedの両方を弾いてからでないと.toLowerCase()で例外になる。
+      p[HEARING_PROPERTIES.chartTranscribed] == null || p[HEARING_PROPERTIES.chartTranscribed] === ""
         ? null
         : p[HEARING_PROPERTIES.chartTranscribed]!.toLowerCase() === "true",
     expectedRevenue: num(p[HEARING_PROPERTIES.expectedRevenue]),
@@ -563,6 +565,70 @@ export async function createHearingDeal(
   if (!res.ok) throw new Error(`HubSpot deal create failed: ${res.status} ${await res.text()}`);
   const data = await res.json();
   return toHearingContent(data);
+}
+
+export const TASK_TYPES = ["TODO", "CALL", "EMAIL"] as const;
+export type DealTaskType = (typeof TASK_TYPES)[number];
+
+export const TASK_PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH"] as const;
+export type DealTaskPriority = (typeof TASK_PRIORITIES)[number];
+
+export interface DealTaskInput {
+  subject: string;
+  body: string;
+  /** datetime-localの値（例: "2026-09-15T08:00"）。ブラウザのローカルタイムゾーンで解釈する。 */
+  dueAt: string;
+  taskType: DealTaskType;
+  priority: DealTaskPriority;
+  ownerId: string;
+}
+
+/**
+ * 商談報告×Hubspot画面の「HubSpotタスクを追加」から、HubSpotの取引（Deal）に紐づくタスクを作成する。
+ * HubSpot上の「取引→アクティビティー→その他→タスク」で作るタスクと同じ項目（件名・期日・
+ * タスクタイプ・優先度・担当者・メモ）だけを対象にする（リマインダー・繰り返し・キューは対象外）。
+ */
+export async function createDealTask(dealId: string, input: DealTaskInput): Promise<{ id: string }> {
+  const headers = authHeaders();
+  if (!headers) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
+  if (!SALES_OWNERS[input.ownerId]) throw new Error("不正な担当者です");
+
+  // input.dueAtはdatetime-local入力の値（例: "2026-09-15T08:00"、タイムゾーン情報なし）。
+  // タイムゾーンを指定せずnew Date()に渡すと、実行環境（Vercelのサーバーは基本UTC）の
+  // ローカル時刻として解釈されてしまい、日本時間のつもりの時刻が最大9時間ずれる。
+  // 明示的に日本時間（+09:00）として解釈する。
+  const dueTimestamp = new Date(`${input.dueAt}:00+09:00`).getTime();
+  if (!Number.isFinite(dueTimestamp)) throw new Error("期日が不正です");
+
+  const properties: Record<string, string> = {
+    hs_task_subject: input.subject,
+    hs_task_body: input.body,
+    hs_task_status: "NOT_STARTED",
+    hs_task_type: input.taskType,
+    hs_task_priority: input.priority,
+    hs_timestamp: String(dueTimestamp),
+    hubspot_owner_id: input.ownerId,
+  };
+
+  const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/tasks`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ properties }),
+  });
+  if (!res.ok) throw new Error(`HubSpot task create failed: ${res.status} ${await res.text()}`);
+  const data = await res.json();
+
+  // v4の「default」関連付けエンドポイントを使うと、関連付けの種類ID（associationTypeId）を
+  // 事前に調べておかなくても、取引⇔タスクの標準的な関連付けを自動で作成できる。
+  const assocRes = await fetch(
+    `${HUBSPOT_BASE}/crm/v4/objects/tasks/${data.id}/associations/default/deals/${dealId}`,
+    { method: "PUT", headers },
+  );
+  if (!assocRes.ok) {
+    throw new Error(`HubSpot task association failed: ${assocRes.status} ${await assocRes.text()}`);
+  }
+
+  return { id: data.id };
 }
 
 /** 「月額利用料(手動)」— 受注金額として使う金額項目。指定が無い商談は税込・自動計算 → amount の順にフォールバック */
