@@ -36,10 +36,15 @@ export default function ShiftCalendarGrid({
   year,
   month,
   calendar,
+  onDayClick,
+  selectedDate,
 }: {
   year: number;
   month: number;
   calendar: Record<string, ShiftCalendarEntry[]>;
+  /** 指定すると各日付マスがクリック可能になる（シフト予定の追加用）。 */
+  onDayClick?: (dateStr: string) => void;
+  selectedDate?: string;
 }) {
   const blanks = leadingBlanks(year, month);
   const total = daysInMonth(year, month);
@@ -63,10 +68,14 @@ export default function ShiftCalendarGrid({
           const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
           const entries = calendar[dateStr] ?? [];
           const isToday = dateStr === todayStr;
+          const isSelected = dateStr === selectedDate;
           return (
             <div
               key={i}
-              className={`min-h-[92px] border-b border-r border-border p-1.5 last:border-r-0 ${isToday ? "bg-brand-light/30" : ""}`}
+              onClick={onDayClick ? () => onDayClick(dateStr) : undefined}
+              className={`min-h-[92px] border-b border-r border-border p-1.5 last:border-r-0 ${isToday ? "bg-brand-light/30" : ""} ${
+                onDayClick ? "cursor-pointer hover:bg-brand-light/50" : ""
+              } ${isSelected ? "ring-2 ring-inset ring-brand" : ""}`}
             >
               <span className={`text-xs ${isToday ? "font-bold text-brand" : "text-foreground/50"}`}>{day}</span>
               <div className="mt-1 flex flex-col gap-0.5">

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requirePageSession } from "@/lib/session";
 import { listCallShifts, listStaffWages } from "@/lib/google/sheets";
-import { isSupervisorEmail } from "@/lib/callShifts";
+import { isSupervisorEmail, isHourlyStaffShift } from "@/lib/callShifts";
 import ShiftManagementView from "@/components/ShiftManagementView";
 
 /**
@@ -17,7 +17,10 @@ export default async function ShiftManagementPage() {
   }
 
   const accessToken = session.accessToken;
-  const [shifts, wages] = await Promise.all([listCallShifts(accessToken), listStaffWages(accessToken)]);
+  const [allShifts, wages] = await Promise.all([listCallShifts(accessToken), listStaffWages(accessToken)]);
+  // 通常社員（個別アカウントでの記録）は時給・人件費の対象外のため、バイト・インターン
+  // （contact-sales@共有アカウント経由）の記録だけに絞って集計する。
+  const shifts = allShifts.filter(isHourlyStaffShift);
 
   return (
     <div className="flex flex-col gap-6">

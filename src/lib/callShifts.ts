@@ -1,3 +1,5 @@
+import { SHARED_ACCOUNTS } from "@/lib/actingAs";
+
 /**
  * Pure constants/types for the "callShifts" Google Sheets tab — kept separate from
  * lib/google/sheets.ts (pulls in googleapis), same reasoning as lib/leads.ts.
@@ -72,6 +74,18 @@ export function isSupervisorEmail(email: string): boolean {
  */
 export function callerIdentityOf(shift: { callerEmail: string; callerName: string }): string {
   return (shift.callerName || shift.callerEmail).trim();
+}
+
+/**
+ * 稼働報告のうち、バイト・インターン（時給が発生する人件費対象）分だけを絞り込むための判定。
+ * バイト・インターンはSlack同様アプリもcontact-sales@oncall-japan.comの共有アカウントでログイン
+ * するため、その記録のcallerEmailは「共有アカウント自身のメール」または「onBehalfOfNameで入力した
+ * 生の氏名（@を含まない）」のいずれかになる。社員が自分の個別アカウントで記録した架電実績（人件費の
+ * 対象外）は、実在するメールアドレスがそのまま入るため、@を含み、かつ共有アカウント自身とも異なる
+ * 値になる——これで区別する。
+ */
+export function isHourlyStaffShift(shift: { callerEmail: string }): boolean {
+  return shift.callerEmail === SHARED_ACCOUNTS.sales || !shift.callerEmail.includes("@");
 }
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];

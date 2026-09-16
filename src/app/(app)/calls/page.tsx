@@ -8,6 +8,7 @@ import ShiftForm from "@/components/ShiftForm";
 import MyShiftsTable from "@/components/MyShiftsTable";
 import QuarterlyCallDashboard from "@/components/QuarterlyCallDashboard";
 import SectionTabs from "@/components/SectionTabs";
+import ShiftScheduleCalendar from "@/components/ShiftScheduleCalendar";
 
 function pct(numerator: number, denominator: number): string {
   return denominator > 0 ? `${Math.round((numerator / denominator) * 100)}%` : "—";
@@ -78,6 +79,11 @@ export default async function CallsPage() {
                 groupByPerson={isSupervisor}
               />
             ),
+          },
+          {
+            key: "schedule",
+            label: "シフト予定を入れる（カレンダー）",
+            content: <ShiftScheduleCalendar shifts={myShifts} isSupervisor={isSupervisor} />,
           },
           {
             key: "quarterly",
