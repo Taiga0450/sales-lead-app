@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import { verifySlackSignature } from "@/lib/slack/verify";
 
 /**
+ * 稼働報告（人件費が発生するバイト・インターン）が必要な人だけに/shiftの利用を絞る。
+ * バイト・インターンはSlackもcontact-sales@oncall-japan.comの共有アカウントでログインしているため
+ * SlackユーザーIDは1つに固定できる。t.mori（動作確認用）も含めている——確認が済んだら外してよい。
+ */
+const ALLOWED_SLACK_USER_IDS = [
+  "U0BTZ0M1430", // セールス インターン（contact-sales@oncall-japan.com）
+  "U091KSB7MDJ", // 森 太雅（t.mori@oncall-japan.com、動作確認用）
+];
+
+/**
  * Slackスラッシュコマンド（/shift）のRequest URL。
  * 3秒以内にSlackへ200を返す必要があるため、ここではモーダルを開くだけ（views.open）で即座に応答し、
  * 実際のシート書き込みはモーダル送信時（/api/slack/interactions）で行う。
@@ -22,6 +32,11 @@ export async function POST(request: Request) {
   }
 
   const params = new URLSearchParams(rawBody);
+  const userId = params.get("user_id") ?? "";
+  if (!ALLOWED_SLACK_USER_IDS.includes(userId)) {
+    return NextResponse.json({ response_type: "ephemeral", text: "この操作は許可されていません。" });
+  }
+
   const triggerId = params.get("trigger_id");
   const botToken = process.env.SLACK_BOT_TOKEN;
   if (!triggerId || !botToken) {
