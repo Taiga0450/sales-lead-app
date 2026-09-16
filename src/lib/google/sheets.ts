@@ -7,6 +7,8 @@ import type { DealHearingRow } from "@/lib/dealHearing";
 import type { DealHearingContent } from "@/lib/hubspot";
 import { CALL_SHIFT_HEADERS } from "@/lib/callShifts";
 import type { CallShiftRow } from "@/lib/callShifts";
+import { STAFF_WAGE_HEADERS } from "@/lib/staffWages";
+import type { StaffWageRow } from "@/lib/staffWages";
 import type { SharedAccountKey } from "@/lib/actingAs";
 
 export { DEAL_HEARING_HEADERS } from "@/lib/dealHearing";
@@ -14,6 +16,9 @@ export type { DealHearingField, DealHearingRow } from "@/lib/dealHearing";
 
 export { CALL_SHIFT_HEADERS } from "@/lib/callShifts";
 export type { CallShiftField, CallShiftRow } from "@/lib/callShifts";
+
+export { STAFF_WAGE_HEADERS } from "@/lib/staffWages";
+export type { StaffWageField, StaffWageRow } from "@/lib/staffWages";
 
 export { LEAD_HEADERS, LEAD_STATUSES } from "@/lib/leads";
 export type { LeadField, LeadRow } from "@/lib/leads";
@@ -731,6 +736,93 @@ export async function deleteCallShift(accessToken: string, id: string): Promise<
       ],
     },
   });
+}
+
+const STAFF_WAGES_SHEET_NAME = "staffWages";
+const STAFF_WAGE_LAST_COL = String.fromCharCode("A".charCodeAt(0) + STAFF_WAGE_HEADERS.length - 1);
+
+async function ensureStaffWagesSheet(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const exists = meta.data.sheets?.some((s) => s.properties?.title === STAFF_WAGES_SHEET_NAME);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: STAFF_WAGES_SHEET_NAME } } }] },
+    });
+  }
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${STAFF_WAGES_SHEET_NAME}!A1:${STAFF_WAGE_LAST_COL}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[...STAFF_WAGE_HEADERS]] },
+  });
+}
+
+function rowToStaffWage(row: string[]): StaffWageRow {
+  const wage = {} as StaffWageRow;
+  STAFF_WAGE_HEADERS.forEach((header, i) => {
+    wage[header] = row[i] ?? "";
+  });
+  return wage;
+}
+
+export async function listStaffWages(accessToken: string): Promise<StaffWageRow[]> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureStaffWagesSheet(sheets, spreadsheetId);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${STAFF_WAGES_SHEET_NAME}!A2:${STAFF_WAGE_LAST_COL}`,
+  });
+  const rows = res.data.values ?? [];
+  return rows.filter((row) => row.some((cell) => cell)).map((row) => rowToStaffWage(row as string[]));
+}
+
+/** callerIdentity（稼働者の識別キー）ごとに1行だけ持つ。既存行があれば時給を上書き、無ければ新規追加する。 */
+export async function upsertStaffWage(
+  accessToken: string,
+  callerIdentity: string,
+  hourlyWage: string,
+): Promise<StaffWageRow> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureStaffWagesSheet(sheets, spreadsheetId);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${STAFF_WAGES_SHEET_NAME}!A2:${STAFF_WAGE_LAST_COL}`,
+  });
+  const rows = (res.data.values ?? []) as string[][];
+  const identityIndex = STAFF_WAGE_HEADERS.indexOf("callerIdentity");
+  const rowIndex = rows.findIndex((row) => row[identityIndex] === callerIdentity);
+  const updatedAt = new Date().toISOString();
+
+  if (rowIndex === -1) {
+    const newWage: StaffWageRow = { id: crypto.randomUUID(), callerIdentity, hourlyWage, updatedAt };
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${STAFF_WAGES_SHEET_NAME}!A:${STAFF_WAGE_LAST_COL}`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [STAFF_WAGE_HEADERS.map((h) => newWage[h] ?? "")] },
+    });
+    return newWage;
+  }
+
+  const current = rowToStaffWage(rows[rowIndex]);
+  const updated: StaffWageRow = { ...current, hourlyWage, updatedAt };
+  const sheetRow = rowIndex + 2;
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: [
+        { range: `${STAFF_WAGES_SHEET_NAME}!${columnLetterAt(STAFF_WAGE_HEADERS.indexOf("hourlyWage"))}${sheetRow}`, values: [[hourlyWage]] },
+        { range: `${STAFF_WAGES_SHEET_NAME}!${columnLetterAt(STAFF_WAGE_HEADERS.indexOf("updatedAt"))}${sheetRow}`, values: [[updatedAt]] },
+      ],
+    },
+  });
+  return updated;
 }
 
 const ACTING_AS_ROSTER_LAST_COL = String.fromCharCode("A".charCodeAt(0) + ACTING_AS_ROSTER_HEADERS.length - 1);

@@ -86,6 +86,18 @@ function ScriptIcon() {
   );
 }
 
+function ShiftIcon() {
+  return (
+    <IconBase>
+      <rect x="3.5" y="4.5" width="17" height="16" rx="2" />
+      <line x1="3.5" y1="9.5" x2="20.5" y2="9.5" />
+      <line x1="7.5" y1="13" x2="7.5" y2="17" />
+      <line x1="12" y1="13" x2="12" y2="17" />
+      <line x1="16.5" y1="13" x2="16.5" y2="15.5" />
+    </IconBase>
+  );
+}
+
 const NAV_ITEMS = [
   { href: "/", label: "ホーム", icon: HomeIcon },
   { href: "/leads", label: "リード一覧", icon: ListIcon },
@@ -95,16 +107,26 @@ const NAV_ITEMS = [
   { href: "/talk-script", label: "トークスクリプト", icon: ScriptIcon },
 ];
 
+// 統括担当者（管理者）専用の項目。isSupervisor=falseなら表示しない。
+const ADMIN_NAV_ITEMS = [{ href: "/shift-management", label: "シフト管理表", icon: ShiftIcon }];
+
 // シェアレジ担当者はリードのメモ記録だけを行うため、オンコール営業向けの項目は表示しない。
 const SHAREREGI_VISIBLE_HREFS = new Set(["/leads"]);
 
-export default function Sidebar({ sharedAccountKey = null }: { sharedAccountKey?: SharedAccountKey | null }) {
+export default function Sidebar({
+  sharedAccountKey = null,
+  isSupervisor = false,
+}: {
+  sharedAccountKey?: SharedAccountKey | null;
+  isSupervisor?: boolean;
+}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const navItems =
+  const baseItems =
     sharedAccountKey === "shareregi"
       ? NAV_ITEMS.filter((item) => SHAREREGI_VISIBLE_HREFS.has(item.href))
       : NAV_ITEMS;
+  const navItems = isSupervisor ? [...baseItems, ...ADMIN_NAV_ITEMS] : baseItems;
 
   if (collapsed) {
     return (

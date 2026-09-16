@@ -3,6 +3,7 @@ import { requirePageSession } from "@/lib/session";
 import Sidebar from "@/components/Sidebar";
 import ActingAsBanner from "@/components/ActingAsBanner";
 import { isSharedAccountEmail, getSharedAccountKey } from "@/lib/actingAs";
+import { isSupervisorEmail } from "@/lib/callShifts";
 
 /**
  * ログイン必須の画面はすべてこのレイアウト配下（(app)グループ）に置く。ここで一括して
@@ -12,10 +13,11 @@ import { isSharedAccountEmail, getSharedAccountKey } from "@/lib/actingAs";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requirePageSession();
   const sharedAccountKey = session.user?.email ? getSharedAccountKey(session.user.email) : null;
+  const isSupervisor = session.user?.email ? isSupervisorEmail(session.user.email) : false;
 
   return (
     <div className="flex min-h-full flex-1" data-shared-account={sharedAccountKey ?? undefined}>
-      <Sidebar sharedAccountKey={sharedAccountKey} />
+      <Sidebar sharedAccountKey={sharedAccountKey} isSupervisor={isSupervisor} />
 
       <div className="flex min-h-full flex-1 flex-col">
         <header className="border-b border-border bg-surface">

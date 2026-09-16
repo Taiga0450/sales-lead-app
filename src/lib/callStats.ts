@@ -318,3 +318,35 @@ export function computeQuarterlySummary(shifts: CallShiftRow[]): QuarterlyCaller
   }
   return [...byKey.values()];
 }
+
+export interface ShiftCalendarEntry {
+  /** 稼働者の識別キー（callerIdentityOf）。 */
+  identity: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  hours: number;
+}
+
+/** 指定した年月（例: year=2026, month=9）について、日付（"YYYY-MM-DD"）→その日にシフトに入っている人の一覧、を返す。 */
+export function computeMonthlyShiftCalendar(
+  shifts: CallShiftRow[],
+  year: number,
+  month: number,
+): Record<string, ShiftCalendarEntry[]> {
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const byDate: Record<string, ShiftCalendarEntry[]> = {};
+  for (const shift of shifts) {
+    if (!shift.date || shift.date.slice(0, 7) !== monthStr) continue;
+    const identity = callerIdentityOf(shift);
+    if (!identity) continue;
+    (byDate[shift.date] ??= []).push({
+      identity,
+      name: shift.callerName || shift.callerEmail,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      hours: shiftHours(shift.startTime, shift.endTime),
+    });
+  }
+  return byDate;
+}
