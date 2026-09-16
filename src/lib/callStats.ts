@@ -350,3 +350,27 @@ export function computeMonthlyShiftCalendar(
   }
   return byDate;
 }
+
+export interface MonthlyIdentityTotal {
+  identity: string;
+  name: string;
+  hours: number;
+  apo: number;
+}
+
+/** 指定した年月について、稼働者ごとの稼働時間合計とアポ獲得数合計を返す（インセンティブ集計に使う）。 */
+export function computeMonthlyIdentityTotals(shifts: CallShiftRow[], year: number, month: number): MonthlyIdentityTotal[] {
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const byIdentity = new Map<string, MonthlyIdentityTotal>();
+  for (const shift of shifts) {
+    if (!shift.date || shift.date.slice(0, 7) !== monthStr) continue;
+    const identity = callerIdentityOf(shift);
+    if (!identity) continue;
+    const acc = byIdentity.get(identity) ?? { identity, name: shift.callerName || shift.callerEmail, hours: 0, apo: 0 };
+    acc.hours += shiftHours(shift.startTime, shift.endTime);
+    acc.apo += Number(shift.apo) || 0;
+    if (shift.callerName) acc.name = shift.callerName;
+    byIdentity.set(identity, acc);
+  }
+  return [...byIdentity.values()].sort((a, b) => b.hours - a.hours);
+}

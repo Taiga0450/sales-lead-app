@@ -1,4 +1,5 @@
 import ShiftManagementView from "@/components/ShiftManagementView";
+import { isHourlyStaffShift } from "@/lib/callShifts";
 import type { CallShiftRow } from "@/lib/callShifts";
 import type { StaffWageRow } from "@/lib/staffWages";
 
@@ -11,7 +12,9 @@ function shift(
 ): CallShiftRow {
   return {
     id: `${callerName}-${date}-${startTime}`,
-    callerEmail: `${callerName}@example.com`,
+    // 実際のバイト・インターンの記録は共有アカウント経由のonBehalfOfName入力のため、
+    // callerEmailにも@を含まない氏名そのものが入る（isHourlyStaffShiftの判定に合わせる）。
+    callerEmail: callerName,
     callerName,
     date,
     startTime,
@@ -26,25 +29,28 @@ function shift(
   };
 }
 
-const SHIFTS: CallShiftRow[] = [
-  shift("磯崎", "2026-09-01", "10:00", "18:00"),
-  shift("磯崎", "2026-09-03", "10:00", "18:00"),
-  shift("磯崎", "2026-09-08", "10:00", "18:00"),
-  shift("磯崎", "2026-09-10", "13:00", "18:00"),
-  shift("磯崎", "2026-09-16", "10:00", "18:00"),
-  shift("富田", "2026-09-01", "09:00", "13:00"),
-  shift("富田", "2026-09-02", "09:00", "13:00"),
-  shift("富田", "2026-09-04", "09:00", "17:00"),
-  shift("富田", "2026-09-09", "09:00", "13:00"),
-  shift("富田", "2026-09-16", "09:00", "13:00"),
-  shift("森太雅", "2026-09-02", "18:00", "21:00"),
-  shift("森太雅", "2026-09-09", "18:00", "21:00"),
-  shift("森太雅", "2026-09-15", "18:00", "22:00"),
+const RAW_SHIFTS: CallShiftRow[] = [
+  shift("磯崎", "2026-09-01", "10:00", "18:00", { apo: "1" }),
+  shift("磯崎", "2026-09-03", "10:00", "18:00", { apo: "0" }),
+  shift("磯崎", "2026-09-08", "10:00", "18:00", { apo: "2" }),
+  shift("磯崎", "2026-09-10", "13:00", "18:00", { apo: "1" }),
+  shift("磯崎", "2026-09-16", "10:00", "18:00", { apo: "0" }),
+  shift("藤川", "2026-09-01", "09:00", "13:00", { apo: "0" }),
+  shift("藤川", "2026-09-02", "09:00", "13:00", { apo: "1" }),
+  shift("藤川", "2026-09-04", "09:00", "17:00", { apo: "1" }),
+  shift("藤川", "2026-09-09", "09:00", "13:00", { apo: "0" }),
+  shift("藤川", "2026-09-16", "09:00", "13:00", { apo: "0" }),
+  shift("大坪", "2026-09-02", "18:00", "21:00", { apo: "0" }),
+  shift("大坪", "2026-09-09", "18:00", "21:00", { apo: "1" }),
+  shift("大坪", "2026-09-15", "18:00", "22:00", { apo: "0" }),
+  // 管理者本人（森太雅）が代理入力した場合など——人件費対象から除外されるはず。
+  shift("森太雅", "2026-09-05", "10:00", "18:00", { apo: "5" }),
 ];
+const SHIFTS = RAW_SHIFTS.filter(isHourlyStaffShift);
 
 const WAGES: StaffWageRow[] = [
   { id: "w1", callerIdentity: "磯崎", hourlyWage: "1200", updatedAt: new Date().toISOString() },
-  { id: "w2", callerIdentity: "富田", hourlyWage: "1100", updatedAt: new Date().toISOString() },
+  { id: "w2", callerIdentity: "藤川", hourlyWage: "1100", updatedAt: new Date().toISOString() },
 ];
 
 /**

@@ -77,14 +77,22 @@ export function callerIdentityOf(shift: { callerEmail: string; callerName: strin
 }
 
 /**
+ * 管理者本人の識別名。管理者は統括担当者として他人の代理入力（onBehalfOfName）を行うことがあり、
+ * その際にcallerName/callerEmailへ管理者自身の名前がそのまま入る場合がある——時給・人件費の
+ * 対象ではないため、@を含まない記録だからといって自動でバイト扱いにしない。
+ */
+const NON_HOURLY_IDENTITY_NAMES = ["森太雅"];
+
+/**
  * 稼働報告のうち、バイト・インターン（時給が発生する人件費対象）分だけを絞り込むための判定。
  * バイト・インターンはSlack同様アプリもcontact-sales@oncall-japan.comの共有アカウントでログイン
  * するため、その記録のcallerEmailは「共有アカウント自身のメール」または「onBehalfOfNameで入力した
  * 生の氏名（@を含まない）」のいずれかになる。社員が自分の個別アカウントで記録した架電実績（人件費の
  * 対象外）は、実在するメールアドレスがそのまま入るため、@を含み、かつ共有アカウント自身とも異なる
- * 値になる——これで区別する。
+ * 値になる——これで区別する。ただし管理者自身の名前（NON_HOURLY_IDENTITY_NAMES）は常に除外する。
  */
-export function isHourlyStaffShift(shift: { callerEmail: string }): boolean {
+export function isHourlyStaffShift(shift: { callerEmail: string; callerName: string }): boolean {
+  if (NON_HOURLY_IDENTITY_NAMES.includes(callerIdentityOf(shift))) return false;
   return shift.callerEmail === SHARED_ACCOUNTS.sales || !shift.callerEmail.includes("@");
 }
 
