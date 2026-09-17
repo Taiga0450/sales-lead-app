@@ -18,7 +18,10 @@ interface ShiftCalendarApiEvent {
   startTime: string;
   endTime: string;
   category: "IS" | "IS研修";
+  /** 表示用に結合済み（例: "藤川, 大坪"）。 */
   name: string;
+  /** 1つの予定に複数人（カンマ区切り）が入っている場合、稼働時間は人ごとに分けて集計する。 */
+  names: string[];
 }
 
 function currentMonthStr(): string {
@@ -92,13 +95,15 @@ export default function ShiftManagementView({
   const calendarByDate = useMemo(() => {
     const byDate: Record<string, ShiftCalendarEntry[]> = {};
     for (const e of calendarEvents) {
-      (byDate[e.date] ??= []).push({
-        identity: e.name,
-        name: e.category === "IS研修" ? `${e.name}（研修）` : e.name,
-        startTime: e.startTime,
-        endTime: e.endTime,
-        hours: shiftHours(e.startTime, e.endTime),
-      });
+      for (const name of e.names) {
+        (byDate[e.date] ??= []).push({
+          identity: name,
+          name: e.category === "IS研修" ? `${name}（研修）` : name,
+          startTime: e.startTime,
+          endTime: e.endTime,
+          hours: shiftHours(e.startTime, e.endTime),
+        });
+      }
     }
     return byDate;
   }, [calendarEvents]);
@@ -111,8 +116,10 @@ export default function ShiftManagementView({
       return cur;
     };
     for (const e of calendarEvents) {
-      const cur = ensure(e.name, e.name);
-      cur.hours += shiftHours(e.startTime, e.endTime);
+      for (const name of e.names) {
+        const cur = ensure(name, name);
+        cur.hours += shiftHours(e.startTime, e.endTime);
+      }
     }
     // 今月に稼働予定は無いが時給・アポが設定済みの人（先月まで在籍していた等）も表に出す。
     for (const identity of Object.keys(wages)) ensure(identity, identity);

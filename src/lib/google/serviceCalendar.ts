@@ -38,15 +38,25 @@ export interface ShiftCalendarEvent {
   startTime: string;
   endTime: string;
   category: ShiftEventCategory;
+  /** カンマ区切りで複数人が入っている場合、そのまま結合した表示用文字列（例: "藤川, 大坪"）。 */
   name: string;
+  /** 稼働時間の人別集計用に分割した氏名一覧（1人なら要素1つ）。 */
+  names: string[];
 }
 
-const TITLE_PATTERN = /^(IS研修|IS)\s*\/\s*(.+)$/;
+// 実際の運用では「【IS研修/大坪】」のように全角/半角括弧で囲まれることが多く、また
+// 「IS研修/藤川,大坪」のように1つの予定に複数人がカンマ区切りで入ることもある。
+const TITLE_PATTERN = /^[【\[]?\s*(IS研修|IS)\s*\/\s*([^】\]]+?)\s*[】\]]?$/;
 
-function parseEventTitle(summary: string): { category: ShiftEventCategory; name: string } | null {
+function parseEventTitle(summary: string): { category: ShiftEventCategory; names: string[] } | null {
   const match = TITLE_PATTERN.exec(summary.trim());
   if (!match) return null;
-  return { category: match[1] as ShiftEventCategory, name: match[2].trim() };
+  const names = match[2]
+    .split(/[,、]/)
+    .map((n) => n.trim())
+    .filter(Boolean);
+  if (names.length === 0) return null;
+  return { category: match[1] as ShiftEventCategory, names };
 }
 
 function splitDateTime(dateTime: string): { date: string; time: string } {
@@ -76,7 +86,15 @@ export async function listShiftCalendarEvents(year: number, month: number): Prom
     if (!parsed) continue;
     const start = splitDateTime(e.start.dateTime);
     const end = splitDateTime(e.end.dateTime);
-    events.push({ id: e.id, date: start.date, startTime: start.time, endTime: end.time, ...parsed });
+    events.push({
+      id: e.id,
+      date: start.date,
+      startTime: start.time,
+      endTime: end.time,
+      category: parsed.category,
+      name: parsed.names.join(", "),
+      names: parsed.names,
+    });
   }
   return events;
 }
@@ -95,7 +113,7 @@ export async function createShiftCalendarEvent(params: {
   const res = await calendar.events.insert({
     calendarId: CALENDAR_ID,
     requestBody: {
-      summary: `${category}/${params.name}`,
+      summary: `【${category}/${params.name}】`,
       start: { dateTime: `${params.date}T${params.startTime}:00`, timeZone },
       end: { dateTime: `${params.date}T${params.endTime}:00`, timeZone },
     },
