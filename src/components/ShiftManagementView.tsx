@@ -1,14 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CallShiftRow } from "@/lib/callShifts";
+import { shiftHours } from "@/lib/callShifts";
 import type { StaffWageRow } from "@/lib/staffWages";
 import { wageMapOf } from "@/lib/staffWages";
-import { computeMonthlyShiftCalendar, computeMonthlyIdentityTotals } from "@/lib/callStats";
+import { computeMonthlyIdentityTotals } from "@/lib/callStats";
+import type { ShiftCalendarEntry } from "@/lib/callStats";
 import ShiftCalendarGrid from "./ShiftCalendarGrid";
 
 /** アポ獲得1件あたりのインセンティブ。時給とは別に人件費へ加算する。 */
 const INCENTIVE_PER_APO = 800;
+
+interface ShiftCalendarApiEvent {
+  id: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  category: "IS" | "IS研修";
+  name: string;
+}
 
 function currentMonthStr(): string {
   return new Date().toISOString().slice(0, 7);
@@ -22,6 +33,12 @@ function shiftMonth(monthStr: string, delta: number): string {
 
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 
+/**
+ * シフト予定はGoogleカレンダー（【IS/氏名】【IS研修/氏名】）が一次情報源のため、稼働時間は
+ * ここでカレンダーAPIから月ごとに取得する（callShiftsシートのdate/startTime/endTimeは使わない）。
+ * アポ獲得数（インセンティブ計算用）は引き続きシートの架電実績（isHourlyStaffShiftで絞り込み済み）
+ * から集計し、氏名で突き合わせる。
+ */
 export default function ShiftManagementView({
   shifts,
   initialWages,
@@ -35,10 +52,63 @@ export default function ShiftManagementView({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [year, monthNum] = month.split("-").map(Number);
-  const calendar = useMemo(() => computeMonthlyShiftCalendar(shifts, year, monthNum), [shifts, year, monthNum]);
+  const [calendarEvents, setCalendarEvents] = useState<ShiftCalendarApiEvent[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
 
-  const monthTotals = useMemo(() => computeMonthlyIdentityTotals(shifts, year, monthNum), [shifts, year, monthNum]);
+  const [year, monthNum] = month.split("-").map(Number);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setCalendarLoading(true);
+      setCalendarError(null);
+      try {
+        const res = await fetch(`/api/shift-schedule/calendar?year=${year}&month=${monthNum}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "取得に失敗しました");
+        if (!cancelled) setCalendarEvents(data.events ?? []);
+      } catch (err) {
+        if (!cancelled) setCalendarError(err instanceof Error ? err.message : "取得に失敗しました");
+      } finally {
+        if (!cancelled) setCalendarLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [year, monthNum]);
+
+  const calendarByDate = useMemo(() => {
+    const byDate: Record<string, ShiftCalendarEntry[]> = {};
+    for (const e of calendarEvents) {
+      (byDate[e.date] ??= []).push({
+        identity: e.name,
+        name: e.category === "IS研修" ? `${e.name}（研修）` : e.name,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        hours: shiftHours(e.startTime, e.endTime),
+      });
+    }
+    return byDate;
+  }, [calendarEvents]);
+
+  const apoTotals = useMemo(() => computeMonthlyIdentityTotals(shifts, year, monthNum), [shifts, year, monthNum]);
+
+  const monthTotals = useMemo(() => {
+    const map = new Map<string, { identity: string; name: string; hours: number; apo: number }>();
+    const apoByIdentity = new Map(apoTotals.map((t) => [t.identity, t.apo]));
+    for (const e of calendarEvents) {
+      const cur = map.get(e.name) ?? { identity: e.name, name: e.name, hours: 0, apo: apoByIdentity.get(e.name) ?? 0 };
+      cur.hours += shiftHours(e.startTime, e.endTime);
+      map.set(e.name, cur);
+    }
+    // カレンダーに予定は無いがアポ実績はある人（インセンティブのみ発生）も一覧に出す。
+    for (const t of apoTotals) {
+      if (!map.has(t.identity)) map.set(t.identity, { identity: t.identity, name: t.name, hours: 0, apo: t.apo });
+    }
+    return [...map.values()].sort((a, b) => b.hours - a.hours);
+  }, [calendarEvents, apoTotals]);
 
   const grandTotalHours = monthTotals.reduce((sum, p) => sum + p.hours, 0);
   const grandTotalWageCost = monthTotals.reduce((sum, p) => sum + p.hours * (wages[p.identity] ?? 0), 0);
@@ -94,11 +164,21 @@ export default function ShiftManagementView({
         >
           ▶
         </button>
+        {calendarLoading && <span className="text-xs text-foreground/40">カレンダーを読み込み中...</span>}
       </div>
+
+      {calendarError && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          Googleカレンダーの取得に失敗しました: {calendarError}
+          <br />
+          管理者のGoogleカレンダーを、サービスアカウント（sheets-writer@task-manager-504101.iam.gserviceaccount.com）に
+          「予定の変更権限」で共有してください。
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
-          <p className="text-xs font-medium text-foreground/50">今月の総稼働時間</p>
+          <p className="text-xs font-medium text-foreground/50">今月の総稼働時間（カレンダー予定ベース）</p>
           <p className="mt-2 text-3xl font-bold text-brand">{grandTotalHours.toFixed(1)}h</p>
         </div>
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
@@ -117,7 +197,7 @@ export default function ShiftManagementView({
         </div>
       </div>
 
-      <ShiftCalendarGrid year={year} month={monthNum} calendar={calendar} />
+      <ShiftCalendarGrid year={year} month={monthNum} calendar={calendarByDate} />
 
       <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
         <div className="border-b border-border bg-brand-light/40 px-5 py-3">
@@ -171,8 +251,8 @@ export default function ShiftManagementView({
               </div>
             );
           })}
-          {monthTotals.length === 0 && (
-            <p className="px-5 py-8 text-center text-sm text-foreground/40">この月の稼働報告はまだありません</p>
+          {monthTotals.length === 0 && !calendarLoading && (
+            <p className="px-5 py-8 text-center text-sm text-foreground/40">この月のシフト予定・稼働報告はまだありません</p>
           )}
         </div>
         {error && <p className="border-t border-border px-5 py-2 text-xs text-red-600">{error}</p>}

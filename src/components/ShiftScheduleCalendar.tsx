@@ -43,6 +43,7 @@ export default function ShiftScheduleCalendar({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [calendarWarning, setCalendarWarning] = useState<string | null>(null);
 
   const [year, monthNum] = month.split("-").map(Number);
   const calendar = useMemo(() => computeMonthlyShiftCalendar(shifts, year, monthNum), [shifts, year, monthNum]);
@@ -52,24 +53,21 @@ export default function ShiftScheduleCalendar({
     setSaving(true);
     setSaved(false);
     setError(null);
+    setCalendarWarning(null);
     try {
-      const res = await fetch("/api/call-shifts", {
+      const res = await fetch("/api/shift-schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           date: selectedDate,
           startTime,
           endTime,
-          calls: "",
-          apo: "",
-          receptionNg: "",
-          keymanConnected: "",
-          notes: "シフト予定",
           onBehalfOfName: (isSupervisor ? onBehalfOfName.trim() : "") || getActingAsName() || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "登録に失敗しました");
+      if (data.calendarError) setCalendarWarning(data.calendarError);
       setSaved(true);
       setStartTime("");
       setEndTime("");
@@ -168,6 +166,7 @@ export default function ShiftScheduleCalendar({
           {saved && <span className="text-xs text-emerald-600">登録しました</span>}
           {error && <span className="text-xs text-red-600">{error}</span>}
         </div>
+        {calendarWarning && <p className="mt-2 text-xs text-amber-600">{calendarWarning}</p>}
       </form>
     </div>
   );
