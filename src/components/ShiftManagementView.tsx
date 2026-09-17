@@ -68,6 +68,13 @@ export default function ShiftManagementView({
   const [calendarEvents, setCalendarEvents] = useState<ShiftCalendarApiEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [calendarDebug, setCalendarDebug] = useState<{
+    calendarId: string;
+    timeMin: string;
+    timeMax: string;
+    rawCount: number;
+    unmatchedTitles: string[];
+  } | null>(null);
 
   const [year, monthNum] = month.split("-").map(Number);
 
@@ -80,7 +87,10 @@ export default function ShiftManagementView({
         const res = await fetch(`/api/shift-schedule/calendar?year=${year}&month=${monthNum}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "取得に失敗しました");
-        if (!cancelled) setCalendarEvents(data.events ?? []);
+        if (!cancelled) {
+          setCalendarEvents(data.events ?? []);
+          setCalendarDebug(data.debug ?? null);
+        }
       } catch (err) {
         if (!cancelled) setCalendarError(err instanceof Error ? err.message : "取得に失敗しました");
       } finally {
@@ -245,6 +255,20 @@ export default function ShiftManagementView({
           <br />
           管理者のGoogleカレンダーを、サービスアカウント（sheets-writer@task-manager-504101.iam.gserviceaccount.com）に
           「予定の変更権限」で共有してください。
+        </div>
+      )}
+
+      {calendarDebug && (
+        <div className="rounded-2xl border border-sky-300 bg-sky-50 p-4 text-xs text-sky-800">
+          【デバッグ情報・原因調査用】
+          <br />
+          参照カレンダーID: {calendarDebug.calendarId}
+          <br />
+          取得期間: {calendarDebug.timeMin} 〜 {calendarDebug.timeMax}
+          <br />
+          Googleから返ってきた予定の総数: {calendarDebug.rawCount}件
+          <br />
+          そのうち「IS/氏名」形式に一致しなかったタイトル(最大20件): {calendarDebug.unmatchedTitles.join(" / ") || "（なし）"}
         </div>
       )}
 

@@ -24,8 +24,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const events = await listShiftCalendarEvents(year, month);
-    return NextResponse.json({ events });
+    const { events, debug } = await listShiftCalendarEvents(year, month);
+    return NextResponse.json({ events, debug });
   } catch (error) {
     console.error(error);
     const detail = error instanceof Error ? error.message : String(error);

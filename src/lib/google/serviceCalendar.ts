@@ -66,8 +66,14 @@ function splitDateTime(dateTime: string): { date: string; time: string } {
   return { date, time };
 }
 
+export interface ListShiftCalendarEventsResult {
+  events: ShiftCalendarEvent[];
+  /** デバッグ用: Googleから返ってきた生イベント総数と、パース対象外だったタイトルの一部。 */
+  debug: { calendarId: string; timeMin: string; timeMax: string; rawCount: number; unmatchedTitles: string[] };
+}
+
 /** 指定した年月について、【IS/氏名】【IS研修/氏名】形式のイベントだけを抽出して返す（終日イベントは対象外）。 */
-export async function listShiftCalendarEvents(year: number, month: number): Promise<ShiftCalendarEvent[]> {
+export async function listShiftCalendarEvents(year: number, month: number): Promise<ListShiftCalendarEventsResult> {
   const calendar = getServiceCalendar();
   const timeMin = new Date(year, month - 1, 1).toISOString();
   const timeMax = new Date(year, month, 1).toISOString();
@@ -79,11 +85,16 @@ export async function listShiftCalendarEvents(year: number, month: number): Prom
     maxResults: 2500,
   });
 
+  const rawItems = res.data.items ?? [];
   const events: ShiftCalendarEvent[] = [];
-  for (const e of res.data.items ?? []) {
+  const unmatchedTitles: string[] = [];
+  for (const e of rawItems) {
     if (!e.id || !e.summary || !e.start?.dateTime || !e.end?.dateTime) continue;
     const parsed = parseEventTitle(e.summary);
-    if (!parsed) continue;
+    if (!parsed) {
+      if (unmatchedTitles.length < 20) unmatchedTitles.push(e.summary);
+      continue;
+    }
     const start = splitDateTime(e.start.dateTime);
     const end = splitDateTime(e.end.dateTime);
     events.push({
@@ -96,7 +107,7 @@ export async function listShiftCalendarEvents(year: number, month: number): Prom
       names: parsed.names,
     });
   }
-  return events;
+  return { events, debug: { calendarId: CALENDAR_ID, timeMin, timeMax, rawCount: rawItems.length, unmatchedTitles } };
 }
 
 /** アプリ上で追加したシフト予定を、同じ形式でt.moriのGoogleカレンダーにも反映する。 */
