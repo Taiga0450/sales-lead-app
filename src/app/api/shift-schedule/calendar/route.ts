@@ -28,8 +28,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ events });
   } catch (error) {
     console.error(error);
+    const detail = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Googleカレンダーの取得に失敗しました。カレンダーがサービスアカウントに共有されているか確認してください。" },
+      {
+        error: `Googleカレンダーの取得に失敗しました。カレンダーがサービスアカウントに共有されているか確認してください。（詳細: ${detail}）`,
+      },
       { status: 500 },
     );
   }
