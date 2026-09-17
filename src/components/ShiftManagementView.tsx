@@ -73,7 +73,9 @@ export default function ShiftManagementView({
     timeMin: string;
     timeMax: string;
     rawCount: number;
+    noDateTimeTitles: string[];
     unmatchedTitles: string[];
+    parsedSample: { date: string; names: string[] }[];
   } | null>(null);
 
   const [year, monthNum] = month.split("-").map(Number);
@@ -268,7 +270,11 @@ export default function ShiftManagementView({
           <br />
           Googleから返ってきた予定の総数: {calendarDebug.rawCount}件
           <br />
-          そのうち「IS/氏名」形式に一致しなかったタイトル(最大20件): {calendarDebug.unmatchedTitles.join(" / ") || "（なし）"}
+          時刻指定なし（終日予定扱いでスキップ、最大20件）: {calendarDebug.noDateTimeTitles.join(" / ") || "（なし）"}
+          <br />
+          「IS/氏名」形式に一致しなかったタイトル(最大20件): {calendarDebug.unmatchedTitles.join(" / ") || "（なし）"}
+          <br />
+          実際に読み取れた予定(最大30件): {calendarDebug.parsedSample.map((p) => `${p.date}:${p.names.join(",")}`).join(" / ") || "（なし）"}
         </div>
       )}
 

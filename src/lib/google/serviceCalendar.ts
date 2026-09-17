@@ -69,7 +69,15 @@ function splitDateTime(dateTime: string): { date: string; time: string } {
 export interface ListShiftCalendarEventsResult {
   events: ShiftCalendarEvent[];
   /** デバッグ用: Googleから返ってきた生イベント総数と、パース対象外だったタイトルの一部。 */
-  debug: { calendarId: string; timeMin: string; timeMax: string; rawCount: number; unmatchedTitles: string[] };
+  debug: {
+    calendarId: string;
+    timeMin: string;
+    timeMax: string;
+    rawCount: number;
+    noDateTimeTitles: string[];
+    unmatchedTitles: string[];
+    parsedSample: { date: string; names: string[] }[];
+  };
 }
 
 /** 指定した年月について、【IS/氏名】【IS研修/氏名】形式のイベントだけを抽出して返す（終日イベントは対象外）。 */
@@ -88,11 +96,15 @@ export async function listShiftCalendarEvents(year: number, month: number): Prom
   const rawItems = res.data.items ?? [];
   const events: ShiftCalendarEvent[] = [];
   const unmatchedTitles: string[] = [];
+  const noDateTimeTitles: string[] = [];
   for (const e of rawItems) {
-    if (!e.id || !e.summary || !e.start?.dateTime || !e.end?.dateTime) continue;
-    const parsed = parseEventTitle(e.summary);
+    if (!e.id || !e.start?.dateTime || !e.end?.dateTime) {
+      if (e.summary && noDateTimeTitles.length < 20) noDateTimeTitles.push(e.summary);
+      continue;
+    }
+    const parsed = e.summary ? parseEventTitle(e.summary) : null;
     if (!parsed) {
-      if (unmatchedTitles.length < 20) unmatchedTitles.push(e.summary);
+      if (e.summary && unmatchedTitles.length < 20) unmatchedTitles.push(e.summary);
       continue;
     }
     const start = splitDateTime(e.start.dateTime);
@@ -107,7 +119,11 @@ export async function listShiftCalendarEvents(year: number, month: number): Prom
       names: parsed.names,
     });
   }
-  return { events, debug: { calendarId: CALENDAR_ID, timeMin, timeMax, rawCount: rawItems.length, unmatchedTitles } };
+  const parsedSample = events.slice(0, 30).map((e) => ({ date: e.date, names: e.names }));
+  return {
+    events,
+    debug: { calendarId: CALENDAR_ID, timeMin, timeMax, rawCount: rawItems.length, noDateTimeTitles, unmatchedTitles, parsedSample },
+  };
 }
 
 /** アプリ上で追加したシフト予定を、同じ形式でt.moriのGoogleカレンダーにも反映する。 */
