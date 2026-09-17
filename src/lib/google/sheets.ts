@@ -9,6 +9,10 @@ import { CALL_SHIFT_HEADERS } from "@/lib/callShifts";
 import type { CallShiftRow } from "@/lib/callShifts";
 import { STAFF_WAGE_HEADERS } from "@/lib/staffWages";
 import type { StaffWageRow } from "@/lib/staffWages";
+import { MONTHLY_APO_HEADERS } from "@/lib/monthlyApo";
+import type { MonthlyApoRow } from "@/lib/monthlyApo";
+import { PUBLISHED_SHIFT_HEADERS } from "@/lib/publishedShifts";
+import type { PublishedShiftRow } from "@/lib/publishedShifts";
 import type { SharedAccountKey } from "@/lib/actingAs";
 
 export { DEAL_HEARING_HEADERS } from "@/lib/dealHearing";
@@ -19,6 +23,12 @@ export type { CallShiftField, CallShiftRow } from "@/lib/callShifts";
 
 export { STAFF_WAGE_HEADERS } from "@/lib/staffWages";
 export type { StaffWageField, StaffWageRow } from "@/lib/staffWages";
+
+export { MONTHLY_APO_HEADERS } from "@/lib/monthlyApo";
+export type { MonthlyApoField, MonthlyApoRow } from "@/lib/monthlyApo";
+
+export { PUBLISHED_SHIFT_HEADERS } from "@/lib/publishedShifts";
+export type { PublishedShiftField, PublishedShiftRow } from "@/lib/publishedShifts";
 
 export { LEAD_HEADERS, LEAD_STATUSES } from "@/lib/leads";
 export type { LeadField, LeadRow } from "@/lib/leads";
@@ -823,6 +833,157 @@ export async function upsertStaffWage(
     },
   });
   return updated;
+}
+
+const MONTHLY_APO_SHEET_NAME = "monthlyApo";
+const MONTHLY_APO_LAST_COL = String.fromCharCode("A".charCodeAt(0) + MONTHLY_APO_HEADERS.length - 1);
+
+async function ensureMonthlyApoSheet(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const exists = meta.data.sheets?.some((s) => s.properties?.title === MONTHLY_APO_SHEET_NAME);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: MONTHLY_APO_SHEET_NAME } } }] },
+    });
+  }
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${MONTHLY_APO_SHEET_NAME}!A1:${MONTHLY_APO_LAST_COL}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[...MONTHLY_APO_HEADERS]] },
+  });
+}
+
+function rowToMonthlyApo(row: string[]): MonthlyApoRow {
+  const r = {} as MonthlyApoRow;
+  MONTHLY_APO_HEADERS.forEach((header, i) => {
+    r[header] = row[i] ?? "";
+  });
+  return r;
+}
+
+export async function listMonthlyApo(accessToken: string): Promise<MonthlyApoRow[]> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureMonthlyApoSheet(sheets, spreadsheetId);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${MONTHLY_APO_SHEET_NAME}!A2:${MONTHLY_APO_LAST_COL}`,
+  });
+  const rows = res.data.values ?? [];
+  return rows.filter((row) => row.some((cell) => cell)).map((row) => rowToMonthlyApo(row as string[]));
+}
+
+/** callerIdentity×month（"YYYY-MM"）ごとに1行だけ持つ。既存行があればアポ数を上書き、無ければ新規追加する。 */
+export async function upsertMonthlyApo(
+  accessToken: string,
+  callerIdentity: string,
+  month: string,
+  apoCount: string,
+): Promise<MonthlyApoRow> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureMonthlyApoSheet(sheets, spreadsheetId);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${MONTHLY_APO_SHEET_NAME}!A2:${MONTHLY_APO_LAST_COL}`,
+  });
+  const rows = (res.data.values ?? []) as string[][];
+  const identityIndex = MONTHLY_APO_HEADERS.indexOf("callerIdentity");
+  const monthIndex = MONTHLY_APO_HEADERS.indexOf("month");
+  const rowIndex = rows.findIndex((row) => row[identityIndex] === callerIdentity && row[monthIndex] === month);
+  const updatedAt = new Date().toISOString();
+
+  if (rowIndex === -1) {
+    const newRow: MonthlyApoRow = { id: crypto.randomUUID(), callerIdentity, month, apoCount, updatedAt };
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${MONTHLY_APO_SHEET_NAME}!A:${MONTHLY_APO_LAST_COL}`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [MONTHLY_APO_HEADERS.map((h) => newRow[h] ?? "")] },
+    });
+    return newRow;
+  }
+
+  const current = rowToMonthlyApo(rows[rowIndex]);
+  const updated: MonthlyApoRow = { ...current, apoCount, updatedAt };
+  const sheetRow = rowIndex + 2;
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: [
+        { range: `${MONTHLY_APO_SHEET_NAME}!${columnLetterAt(MONTHLY_APO_HEADERS.indexOf("apoCount"))}${sheetRow}`, values: [[apoCount]] },
+        { range: `${MONTHLY_APO_SHEET_NAME}!${columnLetterAt(MONTHLY_APO_HEADERS.indexOf("updatedAt"))}${sheetRow}`, values: [[updatedAt]] },
+      ],
+    },
+  });
+  return updated;
+}
+
+const PUBLISHED_SHIFTS_SHEET_NAME = "publishedShifts";
+const PUBLISHED_SHIFT_LAST_COL = String.fromCharCode("A".charCodeAt(0) + PUBLISHED_SHIFT_HEADERS.length - 1);
+
+async function ensurePublishedShiftsSheet(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const exists = meta.data.sheets?.some((s) => s.properties?.title === PUBLISHED_SHIFTS_SHEET_NAME);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: PUBLISHED_SHIFTS_SHEET_NAME } } }] },
+    });
+  }
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${PUBLISHED_SHIFTS_SHEET_NAME}!A1:${PUBLISHED_SHIFT_LAST_COL}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[...PUBLISHED_SHIFT_HEADERS]] },
+  });
+}
+
+function rowToPublishedShift(row: string[]): PublishedShiftRow {
+  const r = {} as PublishedShiftRow;
+  PUBLISHED_SHIFT_HEADERS.forEach((header, i) => {
+    r[header] = row[i] ?? "";
+  });
+  return r;
+}
+
+export async function listPublishedShifts(accessToken: string): Promise<PublishedShiftRow[]> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensurePublishedShiftsSheet(sheets, spreadsheetId);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${PUBLISHED_SHIFTS_SHEET_NAME}!A2:${PUBLISHED_SHIFT_LAST_COL}`,
+  });
+  const rows = res.data.values ?? [];
+  return rows.filter((row) => row.some((cell) => cell)).map((row) => rowToPublishedShift(row as string[]));
+}
+
+/** 指定したカレンダーイベントIDを「公開済み」として記録する。既に記録済みなら何もしない（二重通知防止）。 */
+export async function markShiftPublished(accessToken: string, eventId: string): Promise<{ alreadyPublished: boolean }> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensurePublishedShiftsSheet(sheets, spreadsheetId);
+
+  const existing = await listPublishedShifts(accessToken);
+  if (existing.some((r) => r.eventId === eventId)) {
+    return { alreadyPublished: true };
+  }
+
+  const newRow: PublishedShiftRow = { id: crypto.randomUUID(), eventId, publishedAt: new Date().toISOString() };
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${PUBLISHED_SHIFTS_SHEET_NAME}!A:${PUBLISHED_SHIFT_LAST_COL}`,
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [PUBLISHED_SHIFT_HEADERS.map((h) => newRow[h] ?? "")] },
+  });
+  return { alreadyPublished: false };
 }
 
 const ACTING_AS_ROSTER_LAST_COL = String.fromCharCode("A".charCodeAt(0) + ACTING_AS_ROSTER_HEADERS.length - 1);
