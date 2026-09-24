@@ -9,6 +9,9 @@ import LeadsBoard from "@/components/LeadsBoard";
 import ResearchModal from "@/components/ResearchModal";
 import ManualLeadModal from "@/components/ManualLeadModal";
 import BulkImportModal from "@/components/BulkImportModal";
+import ShareRegiCallSummary from "@/components/ShareRegiCallSummary";
+import { listShareRegiCalls } from "@/lib/google/serviceSheets";
+import { canViewShareRegiStats, summarizeShareRegiCalls, type ShareRegiCallerStats } from "@/lib/shareRegiCalls";
 
 export default async function LeadsPage() {
   const session = await requirePageSession();
@@ -20,6 +23,19 @@ export default async function LeadsPage() {
   // シェアレジ担当者は同じリード一覧を見るが、架電日・フェーズ・架電メモ（オンコール営業側の
   // 記録）は閲覧のみとし、シェアレジメモの入力だけを行う。
   const isShareRegi = session?.user?.email ? getSharedAccountKey(session.user.email) === "shareregi" : false;
+
+  // シェアレジの架電件数は営業と混ぜないため、シェアレジの共有アカウントと責任者にだけ表示する。
+  const showShareRegiStats = canViewShareRegiStats(session?.user?.email ?? "");
+  let shareRegiStats: ShareRegiCallerStats[] = [];
+  let shareRegiStatsError: string | null = null;
+  if (showShareRegiStats) {
+    try {
+      shareRegiStats = summarizeShareRegiCalls(await listShareRegiCalls());
+    } catch (err) {
+      console.error("shareregi call stats fetch failed", err);
+      shareRegiStatsError = "シェアレジの架電件数を読み込めませんでした";
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -45,8 +61,10 @@ AI機能（自動リサーチ）は未設定です。手動追加で動作して
         )}
       </div>
 
+      {showShareRegiStats && <ShareRegiCallSummary stats={shareRegiStats} error={shareRegiStatsError} />}
       <KpiCards leads={leads} />
-      <TodayCallSummary leads={leads} />
+      {/* シェアレジのアカウントには営業側の架電集計を出さない（件数が混ざって見えないように） */}
+      {!isShareRegi && <TodayCallSummary leads={leads} />}
       <LeadsBoard leads={leads} assigneeOptions={assigneeOptions} canEditCallTracking={!isShareRegi} />
     </div>
   );

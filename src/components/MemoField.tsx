@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getActingAsName } from "@/lib/actingAs";
 
 export default function MemoField({
   leadId,
@@ -26,10 +27,15 @@ export default function MemoField({
     const res = await fetch(`/api/leads/${leadId}/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [field]: value }),
+      body: JSON.stringify({ [field]: value, onBehalfOfName: getActingAsName() || undefined }),
     });
     setSaving(false);
-    if (res.ok) setSaved(true);
+    if (res.ok) {
+      setSaved(true);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      window.alert(data.error ?? "メモの保存に失敗しました。もう一度お試しください。");
+    }
   }
 
   if (readOnly) {

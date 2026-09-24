@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { getActingAsName } from "@/lib/actingAs";
 
 /**
  * シェアレジ（別事業）担当者が使うメモ欄。オンコールの架電メモとは別の列
@@ -29,14 +30,15 @@ export default function ShareRegiMemoField({ leadId, memo }: { leadId: string; m
     const res = await fetch(`/api/leads/${leadId}/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ shareRegiMemo: value }),
+      body: JSON.stringify({ shareRegiMemo: value, onBehalfOfName: getActingAsName() || undefined }),
     });
     setSaving(false);
     if (res.ok) {
       router.refresh();
     } else {
+      const data = await res.json().catch(() => ({}));
       setValue(memo);
-      window.alert("シェアレジメモの更新に失敗しました。もう一度お試しください。");
+      window.alert(data.error ?? "シェアレジメモの更新に失敗しました。もう一度お試しください。");
     }
   }
 

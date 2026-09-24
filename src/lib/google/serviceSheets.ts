@@ -223,3 +223,59 @@ export async function saveUpsellCall(dealId: string, record: UpsellCallRecord | 
     ...Object.values(records).map((r) => [r.dealId, r.calledAt, r.calledBy, r.hubspotCallId]),
   ]);
 }
+
+const SHAREREGI_CALLS_SHEET_NAME = "shareregiCalls";
+const SHAREREGI_CALLS_HEADERS = ["id", "leadId", "leadName", "callerName", "calledAt"] as const;
+
+export interface ShareRegiCallRecord {
+  id: string;
+  leadId: string;
+  leadName: string;
+  callerName: string;
+  /** ISO 8601（UTC） */
+  calledAt: string;
+}
+
+/**
+ * シェアレジ担当者（contact-shareregi@）がシェアレジメモを保存するたびに1行追記する架電記録。
+ * シェアレジメモは医療機関ごとに1つの欄を上書きする方式で履歴も日付も残らないため、件数集計は
+ * こちらを正とする。営業（oncall）の架電記録（leadsタブの架電日・架電者）とは混ぜない。
+ */
+export async function appendShareRegiCall(record: Omit<ShareRegiCallRecord, "id">): Promise<void> {
+  const sheets = getServiceSheets();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties" });
+  if (!meta.data.sheets?.some((s) => s.properties?.title === SHAREREGI_CALLS_SHEET_NAME)) {
+    await replaceSheetValues(SHAREREGI_CALLS_SHEET_NAME, [[...SHAREREGI_CALLS_HEADERS]]);
+  }
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${SHAREREGI_CALLS_SHEET_NAME}'!A1`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [[crypto.randomUUID(), record.leadId, record.leadName, record.callerName, record.calledAt]],
+    },
+  });
+}
+
+export async function listShareRegiCalls(): Promise<ShareRegiCallRecord[]> {
+  const sheets = getServiceSheets();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHAREREGI_CALLS_SHEET_NAME}'!A2:E`,
+    });
+    return (res.data.values ?? [])
+      .filter((row) => row[0])
+      .map(([id, leadId, leadName, callerName, calledAt]) => ({
+        id,
+        leadId: leadId ?? "",
+        leadName: leadName ?? "",
+        callerName: callerName ?? "",
+        calledAt: calledAt ?? "",
+      }));
+  } catch (error) {
+    if (error instanceof Error && /Unable to parse range/.test(error.message)) return [];
+    throw error;
+  }
+}

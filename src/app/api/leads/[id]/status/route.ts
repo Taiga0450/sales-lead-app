@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/session";
 import { updateLead, LEAD_STATUSES } from "@/lib/google/sheets";
 import { syncLeadToHubSpot } from "@/lib/hubspot";
-import { isSharedAccountEmail } from "@/lib/actingAs";
+import { getSharedAccountKey, isSharedAccountEmail } from "@/lib/actingAs";
+import { appendShareRegiCall } from "@/lib/google/serviceSheets";
 import { isSupervisorEmail } from "@/lib/callShifts";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/leads/[id]/status">) {
@@ -31,6 +32,17 @@ export async function POST(request: Request, ctx: RouteContext<"/api/leads/[id]/
     return NextResponse.json({ error: "不正なステータスです" }, { status: 400 });
   }
 
+  // シェアレジの共有アカウントでは、シェアレジメモの保存＝架電として「誰が」架電したかを記録する。
+  // 名前が無いと件数を集計できないため、画面上部のバナーで架電者を選ぶまで保存させない。
+  const isShareRegiAccount = getSharedAccountKey(callerEmail ?? "") === "shareregi";
+  const shareRegiCaller = body.onBehalfOfName?.trim() ?? "";
+  if (isShareRegiAccount && body.shareRegiMemo !== undefined && !shareRegiCaller) {
+    return NextResponse.json(
+      { error: "架電した人の名前が選ばれていません。画面上部で名前を選んでから保存してください。" },
+      { status: 400 },
+    );
+  }
+
   try {
     const patch: Record<string, string> = {};
     if (body.status) patch.ステータス = body.status;
@@ -50,6 +62,20 @@ export async function POST(request: Request, ctx: RouteContext<"/api/leads/[id]/
     if (body.assignee !== undefined) patch.担当者 = body.assignee;
 
     const updated = await updateLead(accessToken, id, patch);
+
+    if (isShareRegiAccount && body.shareRegiMemo !== undefined) {
+      try {
+        await appendShareRegiCall({
+          leadId: id,
+          leadName: updated.医療機関名,
+          callerName: shareRegiCaller,
+          calledAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        // メモ自体は保存済み。記録の失敗でメモ保存までエラー扱いにしない
+        console.error("shareregi call log failed", error);
+      }
+    }
 
     if (body.status !== undefined || body.memo !== undefined || body.calledAt !== undefined) {
       try {
