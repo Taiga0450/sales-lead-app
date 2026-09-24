@@ -332,6 +332,232 @@ export async function listHearingDeals(query?: string): Promise<DealHearingConte
 }
 
 /**
+ * アップセル抽出機能で使う、HubSpotの「契約院情報」プロパティグループの内部名。
+ * discover_hubspot_schema / search_properties / 実在の成約商談から確認済み。
+ * 「契約終了日」だけは移行時の名残でSalesforce由来の内部名になっている（クリーンな__c名が無い）。
+ */
+const CONTRACT_INFO_PROPERTIES = {
+  contractStartDate: "contractstartdate__c",
+  contractEndDate: "migrated_00n5j00000wnti1ean",
+  receptionHours: "jyudentaioutime__c",
+  contractZip: "keiyakushozipcode__c",
+  contractAddress: "keiyakushojyuusho__c",
+  contractCorporateName: "keiyakushohoujinmei__c",
+  contractRepresentativeTitle: "contractrepresentativetitle__c",
+  contractRepresentativeName: "contractrepresentative__c",
+  contractManager: "contractmanager__c",
+  contractEmail: "contractemail__c",
+  contractMethod: "contractmethod__c",
+  contractNotes: "contractnotes__c",
+  contractUrl: "contracturl__c",
+} as const;
+
+export interface UpsellCandidate {
+  id: string;
+  dealname: string;
+  ownerName: string;
+  phone: string;
+  stageLabel: string;
+  closeDate: string;
+  dealUrl: string;
+  category: string;
+  probability: string;
+  plan: string;
+  product: string;
+  chart: string;
+  expectedRevenue: number | null;
+  area: string;
+  firstMeetingDate: string;
+  patientsPerMonth: number | null;
+  callsPerMonth: number | null;
+  visitsPerMonth: number | null;
+  hearingNotes: string;
+  contractStartDate: string;
+  contractEndDate: string;
+  receptionHours: string;
+  contractZip: string;
+  contractAddress: string;
+  contractCorporateName: string;
+  contractRepresentativeTitle: string;
+  contractRepresentativeName: string;
+  contractManager: string;
+  contractEmail: string;
+  contractMethod: string;
+  contractNotes: string;
+  contractUrl: string;
+}
+
+/**
+ * 契約済みとみなす取引ステージ。営業パイプラインでは「Closed Won」の後にCS側へ引き渡した
+ * 「CS引き継ぎ完了」があり、どちらも確率100%の成約ステージ——closedwonだけを見ると
+ * CS引き継ぎ後の契約院が抜け落ちる。
+ */
+const CONTRACTED_STAGES: Record<string, string> = {
+  closedwon: "Closed Won",
+  "3778240242": "CS引き継ぎ完了",
+};
+
+/** 取引レコードへの直リンク用（account-info/v3/detailsで確認したポータルID・UIドメイン）。 */
+const HUBSPOT_DEAL_URL_BASE = "https://app-na2.hubspot.com/contacts/245587178/record/0-3";
+
+/**
+ * 集計対象4名以外のオーナー名を引くための一覧。HubSpotの非公開アプリにowners読み取りスコープが
+ * 無い場合は取得できないので、その場合は空のまま（呼び出し側でオーナーIDを表示する）。
+ */
+async function fetchOwnerNames(headers: Record<string, string>): Promise<Record<string, string>> {
+  try {
+    const res = await fetch(`${HUBSPOT_BASE}/crm/v3/owners?limit=500`, { headers });
+    if (!res.ok) return {};
+    const data = (await res.json()) as { results: Array<{ id: string; lastName?: string; firstName?: string }> };
+    return Object.fromEntries(
+      data.results.map((o) => [o.id, [o.lastName, o.firstName].filter(Boolean).join(" ")]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+/** HubSpotの会社電話番号は国際形式（+81429687975）で入っていることがあるので、国内形式（0429687975）に直す。 */
+function toDomesticPhone(phone: string): string {
+  const compact = phone.replace(/[\s　]/g, "");
+  return compact.startsWith("+81") ? `0${compact.slice(3).replace(/^0/, "")}` : phone.trim();
+}
+
+/**
+ * 取引に紐づく医療機関（会社）の電話番号を、取引IDごとに引く。紐づく会社が複数ある場合は
+ * 最初に電話番号が入っている会社のものを使う（契約院で番号が食い違う例は確認時点で0件）。
+ */
+async function fetchCompanyPhonesByDeal(
+  dealIds: string[],
+  headers: Record<string, string>,
+): Promise<Record<string, string>> {
+  const companiesByDeal: Record<string, string[]> = {};
+  for (let i = 0; i < dealIds.length; i += 100) {
+    const res = await fetch(`${HUBSPOT_BASE}/crm/v4/associations/deals/companies/batch/read`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ inputs: dealIds.slice(i, i + 100).map((id) => ({ id })) }),
+    });
+    if (!res.ok) throw new Error(`HubSpot association read failed: ${res.status} ${await res.text()}`);
+    const data = (await res.json()) as { results: Array<{ from: { id: string }; to: Array<{ toObjectId: number }> }> };
+    for (const row of data.results) companiesByDeal[row.from.id] = row.to.map((t) => String(t.toObjectId));
+  }
+
+  const companyIds = [...new Set(Object.values(companiesByDeal).flat())];
+  const phoneByCompany: Record<string, string> = {};
+  for (let i = 0; i < companyIds.length; i += 100) {
+    const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/companies/batch/read`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        inputs: companyIds.slice(i, i + 100).map((id) => ({ id })),
+        properties: ["phone", "migrated_phone"],
+      }),
+    });
+    if (!res.ok) throw new Error(`HubSpot company read failed: ${res.status} ${await res.text()}`);
+    const data = (await res.json()) as { results: Array<{ id: string; properties: Record<string, string | null> }> };
+    for (const c of data.results) {
+      const phone = c.properties.phone || c.properties.migrated_phone;
+      if (phone) phoneByCompany[c.id] = toDomesticPhone(phone);
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(companiesByDeal)
+      .map(([dealId, ids]) => [dealId, ids.map((id) => phoneByCompany[id]).find(Boolean) ?? ""])
+      .filter(([, phone]) => phone),
+  );
+}
+
+/**
+ * アップセル対象を洗い出すための、契約済み（CONTRACTED_STAGES）の全商談。商談報告×Hubspotと同じ
+ * ヒアリング項目に加えて、契約院情報（契約開始日・契約終了日・契約書送付先情報など）付きで取得する。
+ * 売上集計と違い、オーナーが集計対象4名以外（退職者・CS担当など）の契約も含める——
+ * 「全ての契約医療機関」を洗い出すのが目的のため。除外するのは名前にテスト/testを含む商談のみ。
+ */
+export async function listContractedDealsForUpsell(): Promise<UpsellCandidate[]> {
+  const headers = authHeaders();
+  if (!headers) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
+
+  const properties = [
+    ...HEARING_SEARCH_PROPERTIES,
+    "closedate",
+    "denwabangou",
+    ...Object.values(CONTRACT_INFO_PROPERTIES),
+  ];
+  const [deals, ownerNames] = await Promise.all([
+    searchDealsAll<Record<string, string | undefined>>(
+      {
+        filterGroups: [
+          { filters: [{ propertyName: "dealstage", operator: "IN", values: Object.keys(CONTRACTED_STAGES) }] },
+        ],
+        properties,
+      },
+      headers,
+    ),
+    fetchOwnerNames(headers),
+  ]);
+
+  const num = (v: string | undefined): number | null => {
+    if (v === undefined || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const contracted = deals.filter((d) => !/テスト|test/i.test(d.properties.dealname ?? ""));
+  const companyPhones = await fetchCompanyPhonesByDeal(
+    contracted.map((d) => d.id),
+    headers,
+  );
+
+  const ownerLabel = (ownerId: string | undefined): string => {
+    if (!ownerId) return "";
+    const known = SALES_OWNERS[ownerId];
+    if (known) return shortOwnerName(known.name);
+    return ownerNames[ownerId] || `ID:${ownerId}`;
+  };
+
+  return contracted.map((deal) => {
+    const p = deal.properties;
+    return {
+      id: deal.id,
+      dealname: p.dealname ?? "",
+      ownerName: ownerLabel(p.hubspot_owner_id),
+      // 医療機関（会社）レコードの番号を優先し、無ければ取引自体の「電話番号」項目を使う
+      phone: companyPhones[deal.id] || (p.denwabangou ?? "").trim(),
+      stageLabel: CONTRACTED_STAGES[p.dealstage ?? ""] ?? p.dealstage ?? "",
+      closeDate: (p.closedate ?? "").slice(0, 10),
+      dealUrl: `${HUBSPOT_DEAL_URL_BASE}/${deal.id}`,
+      category: p[HEARING_PROPERTIES.category] ? consolidateCategory(p[HEARING_PROPERTIES.category]!) : "",
+      probability: p[HEARING_PROPERTIES.probability] ?? "",
+      plan: p[HEARING_PROPERTIES.plan] ?? "",
+      product: p[HEARING_PROPERTIES.product] ?? "",
+      chart: p[HEARING_PROPERTIES.chart] ?? "",
+      expectedRevenue: num(p[HEARING_PROPERTIES.expectedRevenue]),
+      area: p[HEARING_PROPERTIES.area] ?? "",
+      firstMeetingDate: p[HEARING_PROPERTIES.firstMeetingDate] ?? "",
+      patientsPerMonth: num(p[HEARING_PROPERTIES.patientsPerMonth]),
+      callsPerMonth: num(p[HEARING_PROPERTIES.callsPerMonth]),
+      visitsPerMonth: num(p[HEARING_PROPERTIES.visitsPerMonth]),
+      hearingNotes: p[HEARING_PROPERTIES.hearingNotes] ?? "",
+      contractStartDate: p[CONTRACT_INFO_PROPERTIES.contractStartDate] ?? "",
+      contractEndDate: p[CONTRACT_INFO_PROPERTIES.contractEndDate] ?? "",
+      receptionHours: p[CONTRACT_INFO_PROPERTIES.receptionHours] ?? "",
+      contractZip: p[CONTRACT_INFO_PROPERTIES.contractZip] ?? "",
+      contractAddress: p[CONTRACT_INFO_PROPERTIES.contractAddress] ?? "",
+      contractCorporateName: p[CONTRACT_INFO_PROPERTIES.contractCorporateName] ?? "",
+      contractRepresentativeTitle: p[CONTRACT_INFO_PROPERTIES.contractRepresentativeTitle] ?? "",
+      contractRepresentativeName: p[CONTRACT_INFO_PROPERTIES.contractRepresentativeName] ?? "",
+      contractManager: p[CONTRACT_INFO_PROPERTIES.contractManager] ?? "",
+      contractEmail: p[CONTRACT_INFO_PROPERTIES.contractEmail] ?? "",
+      contractMethod: p[CONTRACT_INFO_PROPERTIES.contractMethod] ?? "",
+      contractNotes: p[CONTRACT_INFO_PROPERTIES.contractNotes] ?? "",
+      contractUrl: p[CONTRACT_INFO_PROPERTIES.contractUrl] ?? "",
+    };
+  });
+}
+
+/**
  * 商談報告×Hubspot画面の「HubSpotで検索」用。listHearingDealsは売上集計の対象4名のオーナーに限定するが、
  * ここではそれ以外のオーナーが持つ商談（＝まだアプリで追跡していない医療機関）も検索・追加できるようにする
  * ため、明らかなテスト商談（名前に「テスト」「test」を含むもの）だけを除外する。
@@ -631,6 +857,54 @@ export async function createDealTask(dealId: string, input: DealTaskInput): Prom
   return { id: data.id };
 }
 
+/**
+ * アップセル画面の「架電済み」チェックに合わせて、HubSpotの取引にコール（アクティビティー）を記録する。
+ * 実際の通話内容はアプリでは分からないため、件名と「誰がアプリでチェックしたか」だけを残す。
+ */
+export async function createDealCallLog(
+  dealId: string,
+  input: { title: string; body: string; timestamp: Date },
+): Promise<{ id: string }> {
+  const headers = authHeaders();
+  if (!headers) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
+
+  const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/calls`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      properties: {
+        hs_call_title: input.title,
+        hs_call_body: input.body,
+        hs_call_status: "COMPLETED",
+        hs_call_direction: "OUTBOUND",
+        hs_timestamp: input.timestamp.toISOString(),
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`HubSpot call create failed: ${res.status} ${await res.text()}`);
+  const data = await res.json();
+
+  const assocRes = await fetch(
+    `${HUBSPOT_BASE}/crm/v4/objects/calls/${data.id}/associations/default/deals/${dealId}`,
+    { method: "PUT", headers },
+  );
+  if (!assocRes.ok) {
+    throw new Error(`HubSpot call association failed: ${assocRes.status} ${await assocRes.text()}`);
+  }
+  return { id: data.id };
+}
+
+/**
+ * 「架電済み」チェックを外したときに、そのチェックで作ったコール記録を取り消す。HubSpotのアーカイブ
+ * （ごみ箱行き。HubSpot上で90日間は復元できる）で、完全削除ではない。
+ */
+export async function archiveCallLog(callId: string): Promise<void> {
+  const headers = authHeaders();
+  if (!headers) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
+  const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/calls/${callId}`, { method: "DELETE", headers });
+  if (!res.ok && res.status !== 404) throw new Error(`HubSpot call archive failed: ${res.status} ${await res.text()}`);
+}
+
 /** 「月額利用料(手動)」— 受注金額として使う金額項目。指定が無い商談は税込・自動計算 → amount の順にフォールバック */
 const MANUAL_FEE_PROPERTY = "monthlyfee__c";
 const AUTO_FEE_PROPERTY = "getsugakuriyouryouzeikomijidou";
@@ -677,8 +951,11 @@ function dealEffectiveDate(deal: HubspotDeal): string {
   return (deal.properties.closedate ?? "").slice(0, 10);
 }
 
-async function searchDealsAll(body: Record<string, unknown>, headers: Record<string, string>): Promise<HubspotDeal[]> {
-  const results: HubspotDeal[] = [];
+async function searchDealsAll<P = HubspotDeal["properties"]>(
+  body: Record<string, unknown>,
+  headers: Record<string, string>,
+): Promise<Array<{ id: string; properties: P }>> {
+  const results: Array<{ id: string; properties: P }> = [];
   let after: string | undefined;
   do {
     const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/search`, {

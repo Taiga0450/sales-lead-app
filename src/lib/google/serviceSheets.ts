@@ -133,3 +133,93 @@ export async function upsertShiftFromSlack(params: {
   });
   return { created: false };
 }
+
+/**
+ * 指定タブの中身を丸ごと差し替える（タブが無ければ作る）。HubSpotの内容をそのまま映す
+ * 「アップセル」タブのように、ログイン中ユーザーがいない定期同期から書き込む用途向け。
+ * 先に新しい値で上書きしてから、はみ出た古い行だけを消す——一度全消去してから書き込むと、
+ * 同期中にシートを開いた人に空のタブが見えてしまうため。1行目は見出しとして固定する。
+ */
+export async function replaceSheetValues(sheetName: string, values: string[][]): Promise<void> {
+  const sheets = getServiceSheets();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties" });
+  const exists = meta.data.sheets?.some((s) => s.properties?.title === sheetName);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: sheetName, gridProperties: { frozenRowCount: 1 } } } }],
+      },
+    });
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${sheetName}'!A1`,
+    // 日付・日数をシート上で並べ替え/フィルタできるよう、数値・日付として解釈させる
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
+
+  // 前回より行・列が減った分の古いセルを消す。範囲がシートのグリッド外にはみ出すとAPIエラーになるため、
+  // 書き込み後の実際の行数・列数の内側だけを対象にする。
+  const after = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties" });
+  const grid = after.data.sheets?.find((s) => s.properties?.title === sheetName)?.properties?.gridProperties;
+  const rowCount = grid?.rowCount ?? values.length;
+  const columnCount = grid?.columnCount ?? 0;
+  const width = Math.max(...values.map((row) => row.length));
+  const lastCol = columnLetterAt(columnCount - 1);
+  const ranges: string[] = [];
+  if (rowCount > values.length) ranges.push(`'${sheetName}'!A${values.length + 1}:${lastCol}${rowCount}`);
+  if (columnCount > width) ranges.push(`'${sheetName}'!${columnLetterAt(width)}1:${lastCol}${values.length}`);
+  if (ranges.length > 0) {
+    await sheets.spreadsheets.values.batchClear({ spreadsheetId: SPREADSHEET_ID, requestBody: { ranges } });
+  }
+}
+
+const UPSELL_CALLS_SHEET_NAME = "upsellCalls";
+const UPSELL_CALLS_HEADERS = ["dealId", "calledAt", "calledBy", "hubspotCallId"] as const;
+
+export interface UpsellCallRecord {
+  dealId: string;
+  /** ISO 8601（UTC） */
+  calledAt: string;
+  calledBy: string;
+  /** HubSpotに記録したコールのID（HubSpot側の記録に失敗した場合は空） */
+  hubspotCallId: string;
+}
+
+/**
+ * アップセル画面の「架電済み」チェックの記録。「アップセル」タブは同期のたびにHubSpotの内容で
+ * 丸ごと差し替わるため、チェック状態はこの別タブに取引IDをキーとして持ち、同期時に合流させる。
+ * 一度付けたチェックは手動で外すまで残す（自動リセットしない）。
+ */
+export async function listUpsellCalls(): Promise<Record<string, UpsellCallRecord>> {
+  const sheets = getServiceSheets();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${UPSELL_CALLS_SHEET_NAME}'!A2:D`,
+    });
+    const records: Record<string, UpsellCallRecord> = {};
+    for (const [dealId, calledAt, calledBy, hubspotCallId] of res.data.values ?? []) {
+      if (dealId) records[dealId] = { dealId, calledAt: calledAt ?? "", calledBy: calledBy ?? "", hubspotCallId: hubspotCallId ?? "" };
+    }
+    return records;
+  } catch (error) {
+    // タブがまだ無い（一度もチェックされていない）場合は空扱い
+    if (error instanceof Error && /Unable to parse range/.test(error.message)) return {};
+    throw error;
+  }
+}
+
+/** 1件分の架電済み記録を追加・更新（recordがnullなら削除）して、タブ全体を書き直す。 */
+export async function saveUpsellCall(dealId: string, record: UpsellCallRecord | null): Promise<void> {
+  const records = await listUpsellCalls();
+  if (record) records[dealId] = record;
+  else delete records[dealId];
+  await replaceSheetValues(UPSELL_CALLS_SHEET_NAME, [
+    [...UPSELL_CALLS_HEADERS],
+    ...Object.values(records).map((r) => [r.dealId, r.calledAt, r.calledBy, r.hubspotCallId]),
+  ]);
+}

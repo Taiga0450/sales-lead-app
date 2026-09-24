@@ -8,8 +8,10 @@ export const proxy = auth((req) => {
   // ここでログイン画面へリダイレクトすると、そのHTMLがそのままSlack側にエラーメッセージとして
   // 表示されてしまう。API側でリダイレクトさせない。
   const isSlackApi = req.nextUrl.pathname.startsWith("/api/slack/");
+  // 定期同期（/api/cron/*）も同様にセッションを持たず、CRON_SECRETで保護している。
+  const isCronApi = req.nextUrl.pathname.startsWith("/api/cron/");
 
-  if (!isLoggedIn && !isLoginPage && !isPreviewPage && !isSlackApi) {
+  if (!isLoggedIn && !isLoginPage && !isPreviewPage && !isSlackApi && !isCronApi) {
     return Response.redirect(new URL("/login", req.nextUrl));
   }
 

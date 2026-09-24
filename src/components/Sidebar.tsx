@@ -86,6 +86,15 @@ function ScriptIcon() {
   );
 }
 
+function UpsellIcon() {
+  return (
+    <IconBase>
+      <polyline points="4 16.5 9.5 11 13 14.5 20 7.5" />
+      <polyline points="15 7.5 20 7.5 20 12.5" />
+    </IconBase>
+  );
+}
+
 function ShiftIcon() {
   return (
     <IconBase>
@@ -108,7 +117,10 @@ const NAV_ITEMS = [
 ];
 
 // 統括担当者（管理者）専用の項目。isSupervisor=falseなら表示しない。
-const ADMIN_NAV_ITEMS = [{ href: "/shift-management", label: "シフト管理表", icon: ShiftIcon }];
+const ADMIN_NAV_ITEMS = [
+  { href: "/shift-management", label: "シフト管理表", icon: ShiftIcon },
+  { href: "/admin/upsell-extract", label: "アップセル", icon: UpsellIcon },
+];
 
 // シェアレジ担当者はリードのメモ記録だけを行うため、オンコール営業向けの項目は表示しない。
 const SHAREREGI_VISIBLE_HREFS = new Set(["/leads"]);
