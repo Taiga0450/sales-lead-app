@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { requireSession } from "@/lib/session";
-import { isSupervisorEmail } from "@/lib/callShifts";
+import { canUseUpsell } from "@/lib/upsellAccess";
 import { archiveCallLog, createDealCallLog } from "@/lib/hubspot";
 import { listUpsellCalls, saveUpsellCall } from "@/lib/google/serviceSheets";
 import { syncUpsellSheetQuietly } from "@/lib/upsellSync";
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
   }
-  if (!isSupervisorEmail(email)) {
+  if (!canUseUpsell(email)) {
     return NextResponse.json({ error: "この操作を行う権限がありません" }, { status: 403 });
   }
 

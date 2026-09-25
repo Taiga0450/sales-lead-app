@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { requirePageSession } from "@/lib/session";
-import { isSupervisorEmail } from "@/lib/callShifts";
+import { canUseUpsell } from "@/lib/upsellAccess";
 import { HEARING_OWNERS, listContractedDealsForUpsell } from "@/lib/hubspot";
 import { summarizeUpsellCandidates, type UpsellListSummary } from "@/lib/upsell";
 import { listUpsellCalls } from "@/lib/google/serviceSheets";
@@ -9,14 +9,14 @@ import { syncUpsellSheetQuietly } from "@/lib/upsellSync";
 import UpsellBoard from "@/components/UpsellBoard";
 
 /**
- * 契約済みの医療機関からアップセルを狙う管理者専用ページ。一覧・同期は /api/admin/upsell-extract、
+ * 契約済みの医療機関からアップセルを狙う営業担当用ページ（UPSELL_USER_EMAILSのみ）。一覧・同期は /api/admin/upsell-extract、
  * 各医療機関のアクティビティ（タスク）は商談報告×Hubspotと同じくHubSpotの取引に直接記録する。
  */
 export const maxDuration = 60;
 
 export default async function UpsellPage() {
   const session = await requirePageSession();
-  if (!isSupervisorEmail(session.user?.email ?? "")) {
+  if (!canUseUpsell(session.user?.email ?? "")) {
     redirect("/");
   }
 

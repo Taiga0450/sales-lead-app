@@ -4,6 +4,7 @@ import Sidebar from "@/components/Sidebar";
 import ActingAsBanner from "@/components/ActingAsBanner";
 import { isSharedAccountEmail, getSharedAccountKey } from "@/lib/actingAs";
 import { isSupervisorEmail } from "@/lib/callShifts";
+import { canUseUpsell } from "@/lib/upsellAccess";
 
 /**
  * ログイン必須の画面はすべてこのレイアウト配下（(app)グループ）に置く。ここで一括して
@@ -14,10 +15,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await requirePageSession();
   const sharedAccountKey = session.user?.email ? getSharedAccountKey(session.user.email) : null;
   const isSupervisor = session.user?.email ? isSupervisorEmail(session.user.email) : false;
+  const showUpsell = session.user?.email ? canUseUpsell(session.user.email) : false;
 
   return (
     <div className="flex min-h-full flex-1" data-shared-account={sharedAccountKey ?? undefined}>
-      <Sidebar sharedAccountKey={sharedAccountKey} isSupervisor={isSupervisor} />
+      <Sidebar sharedAccountKey={sharedAccountKey} isSupervisor={isSupervisor} showUpsell={showUpsell} />
 
       <div className="flex min-h-full flex-1 flex-col">
         <header className="border-b border-border bg-surface">

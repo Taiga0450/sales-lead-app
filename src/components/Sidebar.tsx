@@ -117,10 +117,10 @@ const NAV_ITEMS = [
 ];
 
 // 統括担当者（管理者）専用の項目。isSupervisor=falseなら表示しない。
-const ADMIN_NAV_ITEMS = [
-  { href: "/shift-management", label: "シフト管理表", icon: ShiftIcon },
-  { href: "/admin/upsell-extract", label: "アップセル", icon: UpsellIcon },
-];
+const ADMIN_NAV_ITEMS = [{ href: "/shift-management", label: "シフト管理表", icon: ShiftIcon }];
+
+// アップセルは統括担当者に限らず、UPSELL_USER_EMAILSの営業担当に表示する。
+const UPSELL_NAV_ITEM = { href: "/admin/upsell-extract", label: "アップセル", icon: UpsellIcon };
 
 // シェアレジ担当者はリードのメモ記録だけを行うため、オンコール営業向けの項目は表示しない。
 const SHAREREGI_VISIBLE_HREFS = new Set(["/leads"]);
@@ -128,9 +128,11 @@ const SHAREREGI_VISIBLE_HREFS = new Set(["/leads"]);
 export default function Sidebar({
   sharedAccountKey = null,
   isSupervisor = false,
+  showUpsell = false,
 }: {
   sharedAccountKey?: SharedAccountKey | null;
   isSupervisor?: boolean;
+  showUpsell?: boolean;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -138,7 +140,11 @@ export default function Sidebar({
     sharedAccountKey === "shareregi"
       ? NAV_ITEMS.filter((item) => SHAREREGI_VISIBLE_HREFS.has(item.href))
       : NAV_ITEMS;
-  const navItems = isSupervisor ? [...baseItems, ...ADMIN_NAV_ITEMS] : baseItems;
+  const navItems = [
+    ...baseItems,
+    ...(isSupervisor ? ADMIN_NAV_ITEMS : []),
+    ...(showUpsell ? [UPSELL_NAV_ITEM] : []),
+  ];
 
   if (collapsed) {
     return (
