@@ -401,6 +401,23 @@ const CONTRACTED_STAGES: Record<string, string> = {
 const HUBSPOT_DEAL_URL_BASE = "https://app-na2.hubspot.com/contacts/245587178/record/0-3";
 
 /**
+ * 集計対象4名以外のオーナーの表示名（姓）。非公開アプリにowners読み取りスコープが無く
+ * APIで名前を引けないため、HubSpotのオーナー一覧（2026-09-25時点）から転記した。
+ * 新しいオーナーが契約院を持った場合は、ここに無ければ「ID:xxx」と表示される。
+ */
+const OTHER_OWNER_NAMES: Record<string, string> = {
+  "1317301681": "早乙女",
+  "895474486": "中溝",
+  "163135364": "中村",
+  "225916771": "符",
+  "1871430644": "大澤",
+  "1672821660": "リアボルド（停止中）",
+  "343347524": "岸本",
+  "1322400035": "村越",
+  "70926674": "永山",
+};
+
+/**
  * 集計対象4名以外のオーナー名を引くための一覧。HubSpotの非公開アプリにowners読み取りスコープが
  * 無い場合は取得できないので、その場合は空のまま（呼び出し側でオーナーIDを表示する）。
  */
@@ -514,7 +531,7 @@ export async function listContractedDealsForUpsell(): Promise<UpsellCandidate[]>
     if (!ownerId) return "";
     const known = SALES_OWNERS[ownerId];
     if (known) return shortOwnerName(known.name);
-    return ownerNames[ownerId] || `ID:${ownerId}`;
+    return ownerNames[ownerId] || OTHER_OWNER_NAMES[ownerId] || `ID:${ownerId}`;
   };
 
   return contracted.map((deal) => {
