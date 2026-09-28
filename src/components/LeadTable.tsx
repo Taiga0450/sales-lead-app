@@ -91,7 +91,7 @@ export interface ListConditions {
   keyword: string;
   call: "all" | "called" | "not_called";
   assignee?: string;
-  /** 保存済みリストの名前。スプレッドシートへの出力先タブ名の初期値に使う（表示専用、書き込みには使わない）。 */
+  /** 保存済みリストの名前。新しく作るスプレッドシートのファイル名の初期値に使う（表示専用、書き込みには使わない）。 */
   name?: string;
 }
 
@@ -571,24 +571,24 @@ export default function LeadTable({
   const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const [exporting, setExporting] = useState(false);
-  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<{ text: string; url?: string } | null>(null);
 
   async function handleExport() {
-    const tabName = window.prompt("書き出し先のタブ名を入力してください", presetFilter?.name ?? "");
-    if (!tabName || !tabName.trim()) return;
+    const fileName = window.prompt("新しく作るスプレッドシートのファイル名を入力してください", presetFilter?.name ?? "");
+    if (!fileName || !fileName.trim()) return;
     setExporting(true);
     setExportMessage(null);
     try {
       const res = await fetch("/api/leads/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tabName: tabName.trim(), leadIds: filtered.map((lead) => lead.id) }),
+        body: JSON.stringify({ fileName: fileName.trim(), leadIds: filtered.map((lead) => lead.id) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "出力に失敗しました");
-      setExportMessage(`「${data.tabName}」タブに${filtered.length}件書き出しました`);
+      setExportMessage({ text: `新しいスプレッドシート「${data.title}」に${filtered.length}件書き出しました`, url: data.url });
     } catch (err) {
-      setExportMessage(err instanceof Error ? err.message : "出力に失敗しました");
+      setExportMessage({ text: err instanceof Error ? err.message : "出力に失敗しました" });
     } finally {
       setExporting(false);
     }
@@ -660,12 +660,21 @@ export default function LeadTable({
           type="button"
           onClick={handleExport}
           disabled={exporting || filtered.length === 0}
-          title="現在の絞り込み結果をスプレッドシートの新しいタブに書き出します"
+          title="現在の絞り込み結果を新しいスプレッドシート（別ファイル）に書き出します"
           className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-50"
         >
           {exporting ? "出力中..." : "スプレッドシートに出力"}
         </button>
-        {exportMessage && <span className="w-full text-xs text-foreground/50">{exportMessage}</span>}
+        {exportMessage && (
+          <span className="w-full text-xs text-foreground/50">
+            {exportMessage.text}
+            {exportMessage.url && (
+              <a href={exportMessage.url} target="_blank" rel="noreferrer" className="ml-2 text-brand hover:underline">
+                開く
+              </a>
+            )}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
