@@ -279,3 +279,47 @@ export async function listShareRegiCalls(): Promise<ShareRegiCallRecord[]> {
     throw error;
   }
 }
+
+/**
+ * リード一覧の出力先スプレッドシート「リスト」（アプリ本体とは別ファイル）。サービスアカウントに
+ * 編集権限を共有してあるので、誰がログインして出力しても同じファイルに集まる。
+ */
+const LEAD_EXPORT_SPREADSHEET_ID = process.env.LEAD_EXPORT_SPREADSHEET_ID ?? "1YIlcHnWVTohB34mLAq4aj0UHuJMl9B8NzlZkm0l5goE";
+
+/**
+ * 出力先スプレッドシートに新しいタブを作って書き出す。同名タブがあれば上書きせず「(2)」「(3)」と
+ * 連番を付ける。タブ名にGoogle Sheetsで使えない文字（: \ / ? * [ ]）は_に置き換える。
+ */
+export async function exportToLeadListSpreadsheet(
+  tabName: string,
+  values: string[][],
+): Promise<{ tabName: string; url: string }> {
+  const sheets = getServiceSheets();
+  const spreadsheetId = LEAD_EXPORT_SPREADSHEET_ID;
+  const baseName = tabName.replace(/[:\\/?*[\]]/g, "_").slice(0, 100) || "出力リスト";
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" });
+  const existing = new Set(meta.data.sheets?.map((sh) => sh.properties?.title).filter(Boolean));
+  let safeName = baseName;
+  for (let n = 2; existing.has(safeName); n++) {
+    const suffix = ` (${n})`;
+    safeName = `${baseName.slice(0, 100 - suffix.length)}${suffix}`;
+  }
+
+  const added = await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: safeName, gridProperties: { frozenRowCount: 1 } } } }],
+    },
+  });
+  const sheetId = added.data.replies?.[0]?.addSheet?.properties?.sheetId ?? 0;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${safeName}'!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
+
+  return { tabName: safeName, url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}` };
+}

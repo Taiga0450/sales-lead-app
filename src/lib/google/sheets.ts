@@ -1283,7 +1283,7 @@ export async function deleteLead(accessToken: string, id: string): Promise<void>
   });
 }
 
-const LEAD_EXPORT_HEADERS = [
+export const LEAD_EXPORT_HEADERS = [
   "架電日",
   "フェーズ",
   "医療機関名",
@@ -1293,42 +1293,6 @@ const LEAD_EXPORT_HEADERS = [
   "状況",
   "架電メモ",
 ] as const;
-
-/**
- * リード一覧の絞り込み結果（担当者への配布・共有用）を、新しいスプレッドシート（別ファイル）として
- * 書き出す。アプリ本体のスプレッドシートにタブを増やし続けないよう、出力のたびに1ファイル作る。
- * 作成者はログイン中のユーザー（drive.fileスコープ）で、そのユーザーのマイドライブ直下にできる。
- */
-export async function exportLeadsToNewSpreadsheet(
-  accessToken: string,
-  title: string,
-  rows: string[][],
-): Promise<{ spreadsheetId: string; url: string; title: string }> {
-  const sheets = getSheets(accessToken);
-  const fileTitle = title.slice(0, 200) || "出力リスト";
-
-  const created = await sheets.spreadsheets.create({
-    requestBody: {
-      properties: { title: fileTitle },
-      sheets: [{ properties: { title: "リード", gridProperties: { frozenRowCount: 1 } } }],
-    },
-  });
-  const spreadsheetId = created.data.spreadsheetId;
-  if (!spreadsheetId) throw new Error("スプレッドシートの作成に失敗しました");
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: "リード!A1",
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[...LEAD_EXPORT_HEADERS], ...rows] },
-  });
-
-  return {
-    spreadsheetId,
-    url: created.data.spreadsheetUrl ?? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
-    title: fileTitle,
-  };
-}
 
 /**
  * 指定した名前の新しいタブへ、リードをスナップショットとして書き出す（他社リスト取り込みで使用）。同名タブが既にある場合は上書きせず、「(2)」「(3)」のように連番を付けて
