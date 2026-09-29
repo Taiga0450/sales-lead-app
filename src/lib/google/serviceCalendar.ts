@@ -48,7 +48,7 @@ export interface ShiftCalendarEvent {
 // 「IS研修/藤川,大坪」のように1つの予定に複数人がカンマ区切りで入ることもある。
 const TITLE_PATTERN = /^[【\[]?\s*(IS研修|IS)\s*\/\s*([^】\]]+?)\s*[】\]]?$/;
 
-function parseEventTitle(summary: string): { category: ShiftEventCategory; names: string[] } | null {
+export function parseShiftEventTitle(summary: string): { category: ShiftEventCategory; names: string[] } | null {
   const match = TITLE_PATTERN.exec(summary.trim());
   if (!match) return null;
   const names = match[2]
@@ -57,13 +57,6 @@ function parseEventTitle(summary: string): { category: ShiftEventCategory; names
     .filter(Boolean);
   if (names.length === 0) return null;
   return { category: match[1] as ShiftEventCategory, names };
-}
-
-function splitDateTime(dateTime: string): { date: string; time: string } {
-  const d = new Date(dateTime);
-  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  return { date, time };
 }
 
 export interface ListShiftCalendarEventsResult {
@@ -77,52 +70,6 @@ export interface ListShiftCalendarEventsResult {
     noDateTimeTitles: string[];
     unmatchedTitles: string[];
     parsedSample: { date: string; names: string[] }[];
-  };
-}
-
-/** 指定した年月について、【IS/氏名】【IS研修/氏名】形式のイベントだけを抽出して返す（終日イベントは対象外）。 */
-export async function listShiftCalendarEvents(year: number, month: number): Promise<ListShiftCalendarEventsResult> {
-  const calendar = getServiceCalendar();
-  const timeMin = new Date(year, month - 1, 1).toISOString();
-  const timeMax = new Date(year, month, 1).toISOString();
-  const res = await calendar.events.list({
-    calendarId: CALENDAR_ID,
-    timeMin,
-    timeMax,
-    singleEvents: true,
-    maxResults: 2500,
-  });
-
-  const rawItems = res.data.items ?? [];
-  const events: ShiftCalendarEvent[] = [];
-  const unmatchedTitles: string[] = [];
-  const noDateTimeTitles: string[] = [];
-  for (const e of rawItems) {
-    if (!e.id || !e.start?.dateTime || !e.end?.dateTime) {
-      if (e.summary && noDateTimeTitles.length < 20) noDateTimeTitles.push(e.summary);
-      continue;
-    }
-    const parsed = e.summary ? parseEventTitle(e.summary) : null;
-    if (!parsed) {
-      if (e.summary && unmatchedTitles.length < 20) unmatchedTitles.push(e.summary);
-      continue;
-    }
-    const start = splitDateTime(e.start.dateTime);
-    const end = splitDateTime(e.end.dateTime);
-    events.push({
-      id: e.id,
-      date: start.date,
-      startTime: start.time,
-      endTime: end.time,
-      category: parsed.category,
-      name: parsed.names.join(", "),
-      names: parsed.names,
-    });
-  }
-  const parsedSample = events.slice(0, 30).map((e) => ({ date: e.date, names: e.names }));
-  return {
-    events,
-    debug: { calendarId: CALENDAR_ID, timeMin, timeMax, rawCount: rawItems.length, noDateTimeTitles, unmatchedTitles, parsedSample },
   };
 }
 

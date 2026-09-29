@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/session";
 import { isSupervisorEmail } from "@/lib/callShifts";
-import { listShiftCalendarEvents } from "@/lib/google/serviceCalendar";
+import { CalendarScopeError, listShiftCalendarEvents } from "@/lib/google/calendar";
 
 /** シフト管理表（管理者専用）が、Googleカレンダー上の【IS/氏名】【IS研修/氏名】予定を月ごとに取得するためのAPI。 */
 export async function GET(request: Request) {
   let email: string;
+  let accessToken: string;
   try {
     const session = await requireSession();
     email = session.user?.email ?? "";
+    accessToken = session.accessToken ?? "";
   } catch {
     return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
   }
@@ -24,14 +26,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { events, debug } = await listShiftCalendarEvents(year, month);
+    const { events, debug } = await listShiftCalendarEvents(accessToken, year, month);
     return NextResponse.json({ events, debug });
   } catch (error) {
+    if (error instanceof CalendarScopeError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     console.error(error);
     const detail = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       {
-        error: `Googleカレンダーの取得に失敗しました。カレンダーがサービスアカウントに共有されているか確認してください。（詳細: ${detail}）`,
+        error: `Googleカレンダーの取得に失敗しました。（詳細: ${detail}）`,
       },
       { status: 500 },
     );

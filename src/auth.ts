@@ -9,6 +9,8 @@ const GOOGLE_SCOPES = [
   "profile",
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/drive.file",
+  // シフト管理表が森さん自身のカレンダーの【IS/氏名】予定を読むため（lib/google/calendar.ts）
+  "https://www.googleapis.com/auth/calendar.readonly",
 ].join(" ");
 
 async function refreshAccessToken(refreshToken: string) {
