@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requirePageSession } from "@/lib/session";
-import { listStaffWages, listMonthlyApo, listPublishedShifts } from "@/lib/google/sheets";
+import { listStaffWages, listMonthlyApo, listPublishedShifts, listShiftBudgets } from "@/lib/google/sheets";
 import { isSupervisorEmail } from "@/lib/callShifts";
 import { publishedEventIdSetOf } from "@/lib/publishedShifts";
 import ShiftManagementView from "@/components/ShiftManagementView";
@@ -17,10 +17,11 @@ export default async function ShiftManagementPage() {
   }
 
   const accessToken = session.accessToken;
-  const [wages, apoCounts, publishedShifts] = await Promise.all([
+  const [wages, apoCounts, publishedShifts, budgets] = await Promise.all([
     listStaffWages(accessToken),
     listMonthlyApo(accessToken),
     listPublishedShifts(accessToken),
+    listShiftBudgets(accessToken),
   ]);
   const publishedEventIds = [...publishedEventIdSetOf(publishedShifts)];
 
@@ -32,7 +33,12 @@ export default async function ShiftManagementPage() {
           Googleカレンダーのシフト予定をもとに、月間の稼働時間と人件費を確認できます（管理者のみ閲覧可能）
         </p>
       </div>
-      <ShiftManagementView initialWages={wages} initialApoCounts={apoCounts} initialPublishedEventIds={publishedEventIds} />
+      <ShiftManagementView
+        initialWages={wages}
+        initialApoCounts={apoCounts}
+        initialPublishedEventIds={publishedEventIds}
+        initialBudgets={budgets}
+      />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { CALL_SHIFT_HEADERS } from "@/lib/callShifts";
 import type { CallShiftRow } from "@/lib/callShifts";
 import { STAFF_WAGE_HEADERS } from "@/lib/staffWages";
 import type { StaffWageRow } from "@/lib/staffWages";
+import { SHIFT_BUDGET_HEADERS, type ShiftBudgetRow } from "@/lib/shiftBudget";
 import { MONTHLY_APO_HEADERS } from "@/lib/monthlyApo";
 import type { MonthlyApoRow } from "@/lib/monthlyApo";
 import { PUBLISHED_SHIFT_HEADERS } from "@/lib/publishedShifts";
@@ -1332,4 +1333,92 @@ export async function exportLeadsToNewTab(
   });
 
   return safeName;
+}
+
+const SHIFT_BUDGETS_SHEET_NAME = "shiftBudgets";
+const SHIFT_BUDGET_LAST_COL = columnLetterAt(SHIFT_BUDGET_HEADERS.length - 1);
+
+async function ensureShiftBudgetsSheet(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  if (meta.data.sheets?.some((s) => s.properties?.title === SHIFT_BUDGETS_SHEET_NAME)) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: SHIFT_BUDGETS_SHEET_NAME } } }] },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${SHIFT_BUDGETS_SHEET_NAME}!A1:${SHIFT_BUDGET_LAST_COL}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[...SHIFT_BUDGET_HEADERS]] },
+  });
+}
+
+function rowToShiftBudget(row: string[]): ShiftBudgetRow {
+  const r = {} as ShiftBudgetRow;
+  SHIFT_BUDGET_HEADERS.forEach((header, i) => {
+    r[header] = row[i] ?? "";
+  });
+  return r;
+}
+
+/** シフト管理表の月ごとのIS販管費設定（販管費・研修を含めるか・週の割り振りの手動調整分）。 */
+export async function listShiftBudgets(accessToken: string): Promise<ShiftBudgetRow[]> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureShiftBudgetsSheet(sheets, spreadsheetId);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHIFT_BUDGETS_SHEET_NAME}!A2:${SHIFT_BUDGET_LAST_COL}`,
+  });
+  return (res.data.values ?? [])
+    .filter((row) => row.some((cell) => cell))
+    .map((row) => rowToShiftBudget(row as string[]));
+}
+
+/** 月（"YYYY-MM"）ごとに1行だけ持つ。既存行があれば上書き、無ければ追加する。 */
+export async function upsertShiftBudget(
+  accessToken: string,
+  month: string,
+  values: { budget: string; includeTraining: boolean; weekAllocations: Record<string, number> },
+): Promise<ShiftBudgetRow> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureShiftBudgetsSheet(sheets, spreadsheetId);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHIFT_BUDGETS_SHEET_NAME}!A2:${SHIFT_BUDGET_LAST_COL}`,
+  });
+  const rows = (res.data.values ?? []) as string[][];
+  const monthIndex = SHIFT_BUDGET_HEADERS.indexOf("month");
+  const rowIndex = rows.findIndex((row) => row[monthIndex] === month);
+  const existing = rowIndex === -1 ? null : rowToShiftBudget(rows[rowIndex]);
+  const row: ShiftBudgetRow = {
+    id: existing?.id || crypto.randomUUID(),
+    month,
+    budget: values.budget,
+    includeTraining: values.includeTraining ? "TRUE" : "FALSE",
+    weekAllocations: JSON.stringify(values.weekAllocations),
+    updatedAt: new Date().toISOString(),
+  };
+  const line = [SHIFT_BUDGET_HEADERS.map((h) => row[h])];
+
+  if (rowIndex === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${SHIFT_BUDGETS_SHEET_NAME}!A:${SHIFT_BUDGET_LAST_COL}`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: line },
+    });
+  } else {
+    const sheetRow = rowIndex + 2;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${SHIFT_BUDGETS_SHEET_NAME}!A${sheetRow}:${SHIFT_BUDGET_LAST_COL}${sheetRow}`,
+      valueInputOption: "RAW",
+      requestBody: { values: line },
+    });
+  }
+  return row;
 }

@@ -8,11 +8,17 @@ import type { MonthlyApoRow } from "@/lib/monthlyApo";
 import { monthlyApoMapOf } from "@/lib/monthlyApo";
 import type { ShiftCalendarEntry } from "@/lib/callStats";
 import ShiftCalendarGrid from "./ShiftCalendarGrid";
+import {
+  INCENTIVE_PER_APO,
+  buildNameMerger,
+  isAdminStaff,
+  mergedWagesOf,
+  monthBudgetOf,
+  weeklyBudgetRows,
+  type ShiftBudgetRow,
+} from "@/lib/shiftBudget";
 
-/** アポ獲得1件あたりのインセンティブ。時給とは別に人件費へ加算する。 */
-const INCENTIVE_PER_APO = 800;
-
-interface ShiftCalendarApiEvent {
+export interface ShiftCalendarApiEvent {
   id: string;
   date: string;
   startTime: string;
@@ -45,10 +51,15 @@ export default function ShiftManagementView({
   initialWages,
   initialApoCounts,
   initialPublishedEventIds,
+  initialBudgets,
+  previewEvents,
 }: {
   initialWages: StaffWageRow[];
   initialApoCounts: MonthlyApoRow[];
   initialPublishedEventIds: string[];
+  initialBudgets: ShiftBudgetRow[];
+  /** /preview用：カレンダーAPI（ログイン必須）の代わりに使うサンプルのシフト予定。 */
+  previewEvents?: ShiftCalendarApiEvent[];
 }) {
   const [month, setMonth] = useState(currentMonthStr());
   const [wages, setWages] = useState(() => wageMapOf(initialWages));
@@ -65,7 +76,13 @@ export default function ShiftManagementView({
 
   const [error, setError] = useState<string | null>(null);
 
-  const [calendarEvents, setCalendarEvents] = useState<ShiftCalendarApiEvent[]>([]);
+  const [budgetRows, setBudgetRows] = useState(initialBudgets);
+  const [budgetDraft, setBudgetDraft] = useState<{ month: string; value: string } | null>(null);
+  const [weekDrafts, setWeekDrafts] = useState<Record<string, string>>({});
+  const [savingBudget, setSavingBudget] = useState(false);
+  const [budgetError, setBudgetError] = useState<string | null>(null);
+
+  const [calendarEvents, setCalendarEvents] = useState<ShiftCalendarApiEvent[]>(previewEvents ?? []);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [calendarDebug, setCalendarDebug] = useState<{
@@ -81,6 +98,7 @@ export default function ShiftManagementView({
   const [year, monthNum] = month.split("-").map(Number);
 
   useEffect(() => {
+    if (previewEvents) return;
     let cancelled = false;
     (async () => {
       setCalendarLoading(true);
@@ -102,12 +120,25 @@ export default function ShiftManagementView({
     return () => {
       cancelled = true;
     };
-  }, [year, monthNum]);
+  }, [year, monthNum, previewEvents]);
+
+  // 同じ苗字の表記ゆれ（磯崎／磯崎様／磯崎愁斗）を1人にまとめる。時給・アポもまとめた名前で持つ。
+  const mergeName = useMemo(
+    () =>
+      buildNameMerger([
+        ...calendarEvents.flatMap((e) => e.names),
+        ...Object.keys(wages),
+        ...Object.keys(apoCounts).map((k) => k.split("|")[0]),
+      ]),
+    [calendarEvents, wages, apoCounts],
+  );
+  const mergedWages = useMemo(() => mergedWagesOf(wages, mergeName), [wages, mergeName]);
 
   const calendarByDate = useMemo(() => {
     const byDate: Record<string, ShiftCalendarEntry[]> = {};
     for (const e of calendarEvents) {
-      for (const name of e.names) {
+      for (const raw of e.names) {
+        const name = mergeName(raw);
         (byDate[e.date] ??= []).push({
           identity: name,
           name: e.category === "IS研修" ? `${name}（研修）` : name,
@@ -118,34 +149,87 @@ export default function ShiftManagementView({
       }
     }
     return byDate;
-  }, [calendarEvents]);
+  }, [calendarEvents, mergeName]);
 
   const monthTotals = useMemo(() => {
-    const map = new Map<string, { identity: string; name: string; hours: number; apo: number }>();
-    const ensure = (identity: string, name: string) => {
-      const cur = map.get(identity) ?? { identity, name, hours: 0, apo: apoCounts[`${identity}|${month}`] ?? 0 };
+    const map = new Map<string, { identity: string; name: string; hours: number; trainingHours: number; apo: number }>();
+    const ensure = (identity: string) => {
+      const cur = map.get(identity) ?? {
+        identity,
+        name: identity,
+        hours: 0,
+        trainingHours: 0,
+        apo: apoCounts[`${identity}|${month}`] ?? 0,
+      };
       map.set(identity, cur);
       return cur;
     };
     for (const e of calendarEvents) {
-      for (const name of e.names) {
-        const cur = ensure(name, name);
-        cur.hours += shiftHours(e.startTime, e.endTime);
+      for (const raw of e.names) {
+        const name = mergeName(raw);
+        if (isAdminStaff(name)) continue;
+        const cur = ensure(name);
+        const h = shiftHours(e.startTime, e.endTime);
+        if (e.category === "IS研修") cur.trainingHours += h;
+        else cur.hours += h;
       }
     }
     // 今月に稼働予定は無いが時給・アポが設定済みの人（先月まで在籍していた等）も表に出す。
-    for (const identity of Object.keys(wages)) ensure(identity, identity);
+    for (const identity of Object.keys(mergedWages)) if (!isAdminStaff(identity)) ensure(identity);
     for (const key of Object.keys(apoCounts)) {
       const [identity, apoMonth] = key.split("|");
-      if (apoMonth === month) ensure(identity, identity);
+      if (apoMonth === month && !isAdminStaff(mergeName(identity))) ensure(mergeName(identity));
     }
-    return [...map.values()].sort((a, b) => b.hours - a.hours);
-  }, [calendarEvents, wages, apoCounts, month]);
+    return [...map.values()].sort((a, b) => b.hours + b.trainingHours - (a.hours + a.trainingHours));
+  }, [calendarEvents, mergedWages, apoCounts, month, mergeName]);
+
+  const budgetSetting = useMemo(() => monthBudgetOf(budgetRows, month), [budgetRows, month]);
+  const weekRows = useMemo(
+    () => weeklyBudgetRows({ month, events: calendarEvents, wages: mergedWages, merge: mergeName, setting: budgetSetting }),
+    [month, calendarEvents, mergedWages, mergeName, budgetSetting],
+  );
 
   const grandTotalHours = monthTotals.reduce((sum, p) => sum + p.hours, 0);
-  const grandTotalWageCost = monthTotals.reduce((sum, p) => sum + p.hours * (wages[p.identity] ?? 0), 0);
+  const grandTotalTrainingHours = monthTotals.reduce((sum, p) => sum + p.trainingHours, 0);
+  const grandTotalWageCost = weekRows.reduce((sum, w) => sum + w.cost, 0);
   const grandTotalIncentive = monthTotals.reduce((sum, p) => sum + p.apo * INCENTIVE_PER_APO, 0);
   const grandTotalCost = grandTotalWageCost + grandTotalIncentive;
+  const budgetRemaining = budgetSetting.budget === null ? null : budgetSetting.budget - grandTotalCost;
+  const missingWageNames = monthTotals.filter((p) => p.hours + p.trainingHours > 0 && !(mergedWages[p.identity] > 0)).map((p) => p.name);
+
+  async function saveBudget(next: { budget?: string; includeTraining?: boolean; weekAllocations?: Record<string, number> }) {
+    setSavingBudget(true);
+    setBudgetError(null);
+    const payload = {
+      month,
+      budget: next.budget ?? (budgetSetting.budget === null ? "" : String(budgetSetting.budget)),
+      includeTraining: next.includeTraining ?? budgetSetting.includeTraining,
+      weekAllocations: next.weekAllocations ?? budgetSetting.weekAllocations,
+    };
+    try {
+      const res = await fetch("/api/shift-budgets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "保存に失敗しました");
+      setBudgetRows((rows) => [...rows.filter((row) => row.month !== month), data.row]);
+      setBudgetDraft(null);
+      setWeekDrafts({});
+    } catch (err) {
+      setBudgetError(err instanceof Error ? err.message : "保存に失敗しました");
+    } finally {
+      setSavingBudget(false);
+    }
+  }
+
+  function saveWeekAllocation(weekStart: string, value: string | null) {
+    const next = { ...budgetSetting.weekAllocations };
+    if (value === null || value.trim() === "") delete next[weekStart];
+    else next[weekStart] = Number(value) || 0;
+    void saveBudget({ weekAllocations: next });
+  }
 
   const sortedEvents = useMemo(
     () => [...calendarEvents].sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)),
@@ -254,34 +338,190 @@ export default function ShiftManagementView({
       {calendarError && (
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
           Googleカレンダーの取得に失敗しました: {calendarError}
-          <br />
-          管理者のGoogleカレンダーを、サービスアカウント（sheets-writer@task-manager-504101.iam.gserviceaccount.com）に
-          「予定の変更権限」で共有してください。
         </div>
       )}
 
-      {calendarDebug && (
-        <div className="rounded-2xl border border-sky-300 bg-sky-50 p-4 text-xs text-sky-800">
-          【デバッグ情報・原因調査用】
-          <br />
-          参照カレンダーID: {calendarDebug.calendarId}
-          <br />
-          取得期間: {calendarDebug.timeMin} 〜 {calendarDebug.timeMax}
-          <br />
-          Googleから返ってきた予定の総数: {calendarDebug.rawCount}件
-          <br />
-          時刻指定なし（終日予定扱いでスキップ、最大20件）: {calendarDebug.noDateTimeTitles.join(" / ") || "（なし）"}
-          <br />
-          「IS/氏名」形式に一致しなかったタイトル(最大20件): {calendarDebug.unmatchedTitles.join(" / ") || "（なし）"}
-          <br />
-          実際に読み取れた予定(最大30件): {calendarDebug.parsedSample.map((p) => `${p.date}:${p.names.join(",")}`).join(" / ") || "（なし）"}
+      {(calendarDebug?.unmatchedTitles.length ?? 0) > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="font-semibold">形式が違うため読み取れなかった予定があります（販管費に含まれていません）</p>
+          <p className="mt-1 text-xs">カレンダーのタイトルを【IS/名前】または【IS/名前,名前】の形に直してください。</p>
+          <ul className="mt-2 list-disc pl-5 text-xs">
+            {calendarDebug!.unmatchedTitles.map((t, i) => (
+              <li key={i}>{t}</li>
+            ))}
+          </ul>
         </div>
       )}
+
+      {missingWageNames.length > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          時給が未登録のため人件費が0円になっている人がいます：{missingWageNames.join("、")}
+          （下の「スタッフ別」の表で時給を入力してください）
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+        <div className="flex flex-wrap items-center gap-4 border-b border-border bg-brand-light/40 px-5 py-3">
+          <h2 className="font-bold">IS販管費（{year}年{monthNum}月）</h2>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-foreground/60">販管費</span>
+            <input
+              type="number"
+              min="0"
+              value={budgetDraft?.month === month ? budgetDraft.value : (budgetSetting.budget ?? "")}
+              onChange={(e) => setBudgetDraft({ month, value: e.target.value })}
+              placeholder="金額を入力"
+              className="w-36 rounded-md border border-border px-2 py-1 text-sm outline-none focus:border-brand"
+            />
+            <span className="text-xs text-foreground/40">円</span>
+            {budgetDraft?.month === month && (
+              <button
+                type="button"
+                onClick={() => void saveBudget({ budget: budgetDraft.value })}
+                disabled={savingBudget}
+                className="rounded-md bg-brand px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+              >
+                {savingBudget ? "保存中" : "保存"}
+              </button>
+            )}
+          </div>
+          <label className="flex items-center gap-2 text-sm text-foreground/70">
+            <input
+              type="checkbox"
+              checked={budgetSetting.includeTraining}
+              disabled={savingBudget}
+              onChange={(e) => void saveBudget({ includeTraining: e.target.checked })}
+            />
+            研修時間を販管費に含める
+          </label>
+          {budgetError && <span className="text-xs text-red-600">{budgetError}</span>}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 border-b border-border px-5 py-4 md:grid-cols-4">
+          <div>
+            <p className="text-xs text-foreground/50">販管費</p>
+            <p className="text-xl font-bold">{budgetSetting.budget === null ? "未設定" : yen.format(budgetSetting.budget)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-foreground/50">予定人件費（時給分）</p>
+            <p className="text-xl font-bold">{yen.format(grandTotalWageCost)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-foreground/50">インセンティブ（確定分）</p>
+            <p className="text-xl font-bold">{yen.format(grandTotalIncentive)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-foreground/50">残り</p>
+            <p className={`text-xl font-bold ${budgetRemaining !== null && budgetRemaining < 0 ? "text-red-600" : "text-emerald-600"}`}>
+              {budgetRemaining === null ? "—" : yen.format(budgetRemaining)}
+            </p>
+          </div>
+          {budgetSetting.budget !== null && budgetSetting.budget > 0 && (
+            <div className="col-span-2 md:col-span-4">
+              <div className="h-2 overflow-hidden rounded-full bg-border">
+                <div
+                  className={`h-full ${grandTotalCost > budgetSetting.budget ? "bg-red-500" : "bg-emerald-500"}`}
+                  style={{ width: `${Math.min(100, (grandTotalCost / budgetSetting.budget) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-foreground/50">
+                消化率 {((grandTotalCost / budgetSetting.budget) * 100).toFixed(1)}%（予定人件費＋インセンティブ）
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs font-medium text-foreground/50">
+                <th className="px-5 py-2 text-left">週（月〜日）</th>
+                <th className="px-3 py-2 text-left">割り振り</th>
+                <th className="px-3 py-2 text-right">使える時間の目安</th>
+                <th className="px-3 py-2 text-right">予定時間</th>
+                <th className="px-3 py-2 text-right">予定人件費</th>
+                <th className="px-5 py-2 text-right">残り</th>
+              </tr>
+            </thead>
+            <tbody>
+              {weekRows.map((w) => {
+                const draft = weekDrafts[w.weekStart];
+                const over = budgetSetting.budget !== null && w.remaining < 0;
+                return (
+                  <tr key={w.weekStart} className={`border-b border-border last:border-0 ${over ? "bg-red-50" : ""}`}>
+                    <td className="px-5 py-2 font-medium">
+                      {w.label}
+                      <span className="ml-1 text-[11px] text-foreground/40">（{w.days}日）</span>
+                    </td>
+                    <td className="px-3 py-2">
+                      {budgetSetting.budget === null ? (
+                        <span className="text-xs text-foreground/40">販管費を入力すると自動で割り振ります</span>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            value={draft ?? w.allocation}
+                            onChange={(e) => setWeekDrafts((d) => ({ ...d, [w.weekStart]: e.target.value }))}
+                            className="w-28 rounded-md border border-border px-2 py-1 text-sm outline-none focus:border-brand"
+                          />
+                          {draft !== undefined && Number(draft) !== w.allocation && (
+                            <button
+                              type="button"
+                              onClick={() => saveWeekAllocation(w.weekStart, draft)}
+                              disabled={savingBudget}
+                              className="rounded-md bg-brand px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                            >
+                              保存
+                            </button>
+                          )}
+                          {w.isOverride && draft === undefined && (
+                            <button
+                              type="button"
+                              onClick={() => saveWeekAllocation(w.weekStart, null)}
+                              disabled={savingBudget}
+                              title="手動の調整をやめて、日数で自動に割り振る"
+                              className="text-[11px] text-foreground/40 hover:text-brand"
+                            >
+                              自動に戻す
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right text-foreground/60">
+                      {budgetSetting.budget === null || w.hourCap === null ? "—" : `約${w.hourCap.toFixed(1)}h`}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {w.hours.toFixed(1)}h
+                      {w.trainingHours > 0 && (
+                        <span className="ml-1 text-[11px] text-foreground/40">
+                          ＋研修{w.trainingHours.toFixed(1)}h{budgetSetting.includeTraining ? "" : "（対象外）"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">{yen.format(w.cost)}</td>
+                    <td className={`px-5 py-2 text-right font-semibold ${over ? "text-red-600" : "text-emerald-600"}`}>
+                      {budgetSetting.budget === null ? "—" : yen.format(w.remaining)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="border-t border-border px-5 py-2 text-[11px] text-foreground/50">
+          予定人件費＝カレンダーのシフト時間×時給（森さんは対象外）。インセンティブはアポ数を入力した時点で月の合計に加算します。使える時間の目安は、割り振り額÷登録済み時給の平均です。
+        </p>
+      </div>
 
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
           <p className="text-xs font-medium text-foreground/50">今月の総稼働時間（カレンダー予定ベース）</p>
           <p className="mt-2 text-3xl font-bold text-brand">{grandTotalHours.toFixed(1)}h</p>
+          {grandTotalTrainingHours > 0 && (
+            <p className="mt-1 text-[11px] text-foreground/40">ほかに研修 {grandTotalTrainingHours.toFixed(1)}h</p>
+          )}
         </div>
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
           <p className="text-xs font-medium text-foreground/50">今月のバイト人件費（時給＋インセンティブ）</p>
@@ -317,7 +557,7 @@ export default function ShiftManagementView({
         </div>
         <div className="flex flex-col">
           {monthTotals.map((p) => {
-            const wage = wages[p.identity] ?? 0;
+            const wage = mergedWages[p.identity] ?? 0;
             const wageDraft = wageDrafts[p.identity];
             const hasWageDraft = wageDraft !== undefined && Number(wageDraft) !== wage;
 
@@ -327,11 +567,17 @@ export default function ShiftManagementView({
             const hasApoDraft = apoDraft !== undefined && Number(apoDraft) !== apo;
 
             const incentive = apo * INCENTIVE_PER_APO;
-            const total = p.hours * wage + incentive;
+            const paidHours = p.hours + (budgetSetting.includeTraining ? p.trainingHours : 0);
+            const total = paidHours * wage + incentive;
             return (
               <div key={p.identity} className="grid grid-cols-8 items-center gap-3 border-b border-border px-5 py-3 text-sm last:border-0">
                 <span className="font-medium">{p.name}</span>
-                <span>{p.hours.toFixed(1)}h</span>
+                <span>
+                  {p.hours.toFixed(1)}h
+                  {p.trainingHours > 0 && (
+                    <span className="ml-1 text-[11px] text-foreground/40">＋研修{p.trainingHours.toFixed(1)}h</span>
+                  )}
+                </span>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
