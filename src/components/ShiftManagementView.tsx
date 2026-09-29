@@ -8,6 +8,8 @@ import type { MonthlyApoRow } from "@/lib/monthlyApo";
 import { monthlyApoMapOf } from "@/lib/monthlyApo";
 import type { ShiftCalendarEntry } from "@/lib/callStats";
 import ShiftCalendarGrid from "./ShiftCalendarGrid";
+import ShiftSlotPanel from "./ShiftSlotPanel";
+import type { ShiftSlotRow } from "@/lib/shiftSlots";
 import {
   INCENTIVE_PER_APO,
   buildNameMerger,
@@ -15,6 +17,7 @@ import {
   mergedWagesOf,
   monthBudgetOf,
   weeklyBudgetRows,
+  weeksOfMonth,
   type ShiftBudgetRow,
 } from "@/lib/shiftBudget";
 
@@ -52,12 +55,14 @@ export default function ShiftManagementView({
   initialApoCounts,
   initialPublishedEventIds,
   initialBudgets,
+  initialSlots,
   previewEvents,
 }: {
   initialWages: StaffWageRow[];
   initialApoCounts: MonthlyApoRow[];
   initialPublishedEventIds: string[];
   initialBudgets: ShiftBudgetRow[];
+  initialSlots: ShiftSlotRow[];
   /** /preview用：カレンダーAPI（ログイン必須）の代わりに使うサンプルのシフト予定。 */
   previewEvents?: ShiftCalendarApiEvent[];
 }) {
@@ -514,6 +519,8 @@ export default function ShiftManagementView({
           予定人件費＝カレンダーのシフト時間×時給（森さんは対象外）。インセンティブはアポ数を入力した時点で月の合計に加算します。使える時間の目安は、割り振り額÷登録済み時給の平均です。
         </p>
       </div>
+
+      <ShiftSlotPanel weeks={weeksOfMonth(month)} initialRows={initialSlots} events={calendarEvents} merge={mergeName} />
 
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">

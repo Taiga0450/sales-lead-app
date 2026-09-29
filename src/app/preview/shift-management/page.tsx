@@ -1,5 +1,6 @@
 import ShiftManagementView, { type ShiftCalendarApiEvent } from "@/components/ShiftManagementView";
 import type { ShiftBudgetRow } from "@/lib/shiftBudget";
+import type { ShiftSlotRow } from "@/lib/shiftSlots";
 import type { StaffWageRow } from "@/lib/staffWages";
 import type { MonthlyApoRow } from "@/lib/monthlyApo";
 
@@ -42,6 +43,21 @@ const BUDGETS: ShiftBudgetRow[] = [
   },
 ];
 
+const slot = (weekStart: string, weekday: number, startTime: string, endTime: string, capacity: number): ShiftSlotRow => ({
+  id: `${weekStart}-${weekday}-${startTime}`,
+  weekStart,
+  weekday: String(weekday),
+  startTime,
+  endTime,
+  capacity: String(capacity),
+  updatedAt: new Date().toISOString(),
+});
+
+const SLOTS: ShiftSlotRow[] = [
+  ...[1, 2, 3, 4, 5].map((d) => slot("", d, "10:00", "13:00", 2)),
+  ...[1, 2, 3, 4, 5].map((d) => slot("", d, "14:00", "17:00", 1)),
+];
+
 const APO_COUNTS: MonthlyApoRow[] = [
   { id: "a1", callerIdentity: "磯崎", month: currentMonth, apoCount: "4", updatedAt: new Date().toISOString() },
   { id: "a2", callerIdentity: "藤川", month: currentMonth, apoCount: "2", updatedAt: new Date().toISOString() },
@@ -66,6 +82,7 @@ export default function ShiftManagementPreviewPage() {
         initialApoCounts={APO_COUNTS}
         initialPublishedEventIds={[]}
         initialBudgets={BUDGETS}
+        initialSlots={SLOTS}
         previewEvents={EVENTS}
       />
     </div>

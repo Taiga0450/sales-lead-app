@@ -10,6 +10,7 @@ import type { CallShiftRow } from "@/lib/callShifts";
 import { STAFF_WAGE_HEADERS } from "@/lib/staffWages";
 import type { StaffWageRow } from "@/lib/staffWages";
 import { SHIFT_BUDGET_HEADERS, type ShiftBudgetRow } from "@/lib/shiftBudget";
+import { SHIFT_SLOT_HEADERS, type ShiftSlotRow } from "@/lib/shiftSlots";
 import { MONTHLY_APO_HEADERS } from "@/lib/monthlyApo";
 import type { MonthlyApoRow } from "@/lib/monthlyApo";
 import { PUBLISHED_SHIFT_HEADERS } from "@/lib/publishedShifts";
@@ -1421,4 +1422,84 @@ export async function upsertShiftBudget(
     });
   }
   return row;
+}
+
+const SHIFT_SLOTS_SHEET_NAME = "shiftSlots";
+const SHIFT_SLOT_LAST_COL = columnLetterAt(SHIFT_SLOT_HEADERS.length - 1);
+
+async function ensureShiftSlotsSheet(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  if (meta.data.sheets?.some((s) => s.properties?.title === SHIFT_SLOTS_SHEET_NAME)) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: SHIFT_SLOTS_SHEET_NAME } } }] },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${SHIFT_SLOTS_SHEET_NAME}!A1:${SHIFT_SLOT_LAST_COL}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[...SHIFT_SLOT_HEADERS]] },
+  });
+}
+
+async function readShiftSlotRows(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<ShiftSlotRow[]> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHIFT_SLOTS_SHEET_NAME}!A2:${SHIFT_SLOT_LAST_COL}`,
+  });
+  return (res.data.values ?? [])
+    .filter((row) => row.some((cell) => cell))
+    .map((row) => {
+      const r = {} as ShiftSlotRow;
+      SHIFT_SLOT_HEADERS.forEach((header, i) => {
+        r[header] = (row as string[])[i] ?? "";
+      });
+      return r;
+    });
+}
+
+/** シフト管理表の人数枠（基本の型＝weekStart空欄、週ごとの上書き＝weekStartにその週の月曜）。 */
+export async function listShiftSlots(accessToken: string): Promise<ShiftSlotRow[]> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureShiftSlotsSheet(sheets, spreadsheetId);
+  return readShiftSlotRows(sheets, spreadsheetId);
+}
+
+/**
+ * 基本の型（weekStart=""）または特定の週の枠を、渡した内容で丸ごと置き換える。枠の数は多くても
+ * 数十件なので、タブ全体を書き直す（行の挿入・削除の位置ずれを気にしなくてよいように）。
+ */
+export async function replaceShiftSlots(
+  accessToken: string,
+  weekStart: string,
+  slots: { weekday: number; startTime: string; endTime: string; capacity: number }[],
+): Promise<ShiftSlotRow[]> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureShiftSlotsSheet(sheets, spreadsheetId);
+  const others = (await readShiftSlotRows(sheets, spreadsheetId)).filter((r) => r.weekStart !== weekStart);
+  const updatedAt = new Date().toISOString();
+  const next: ShiftSlotRow[] = [
+    ...others,
+    ...slots.map((s) => ({
+      id: crypto.randomUUID(),
+      weekStart,
+      weekday: String(s.weekday),
+      startTime: s.startTime,
+      endTime: s.endTime,
+      capacity: String(s.capacity),
+      updatedAt,
+    })),
+  ];
+  await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${SHIFT_SLOTS_SHEET_NAME}!A2:${SHIFT_SLOT_LAST_COL}` });
+  if (next.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${SHIFT_SLOTS_SHEET_NAME}!A2`,
+      valueInputOption: "RAW",
+      requestBody: { values: next.map((r) => SHIFT_SLOT_HEADERS.map((h) => r[h])) },
+    });
+  }
+  return next;
 }

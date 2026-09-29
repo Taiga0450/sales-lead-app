@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requirePageSession } from "@/lib/session";
-import { listStaffWages, listMonthlyApo, listPublishedShifts, listShiftBudgets } from "@/lib/google/sheets";
+import { listStaffWages, listMonthlyApo, listPublishedShifts, listShiftBudgets, listShiftSlots } from "@/lib/google/sheets";
 import { isSupervisorEmail } from "@/lib/callShifts";
 import { publishedEventIdSetOf } from "@/lib/publishedShifts";
 import ShiftManagementView from "@/components/ShiftManagementView";
@@ -17,11 +17,12 @@ export default async function ShiftManagementPage() {
   }
 
   const accessToken = session.accessToken;
-  const [wages, apoCounts, publishedShifts, budgets] = await Promise.all([
+  const [wages, apoCounts, publishedShifts, budgets, slots] = await Promise.all([
     listStaffWages(accessToken),
     listMonthlyApo(accessToken),
     listPublishedShifts(accessToken),
     listShiftBudgets(accessToken),
+    listShiftSlots(accessToken),
   ]);
   const publishedEventIds = [...publishedEventIdSetOf(publishedShifts)];
 
@@ -38,6 +39,7 @@ export default async function ShiftManagementPage() {
         initialApoCounts={apoCounts}
         initialPublishedEventIds={publishedEventIds}
         initialBudgets={budgets}
+        initialSlots={slots}
       />
     </div>
   );
