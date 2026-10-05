@@ -32,6 +32,8 @@ export const LEAD_HEADERS = [
   "下書きID",
   "id",
   "シェアレジメモ",
+  // アプリ→HubSpotの反映結果。一致する医療機関がHubSpotに無く反映できなかった場合に「未反映」が入る
+  "HubSpot連携",
 ] as const;
 
 export type LeadField = (typeof LEAD_HEADERS)[number];

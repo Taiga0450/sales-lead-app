@@ -314,7 +314,17 @@ function LeadListRow({
         </div>
 
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="font-medium">{lead.医療機関名}</span>
+          <span className="font-medium">
+            {lead.医療機関名}
+            {lead.HubSpot連携 && (
+              <span
+                title="HubSpotに医療機関名が一致するレコードが無いため、フェーズ・架電日・架電メモがHubSpotに反映されていません"
+                className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+              >
+                HubSpot{lead.HubSpot連携}
+              </span>
+            )}
+          </span>
           <div className="text-xs text-foreground/50">
             {lead.種別} ・ {lead.地域}
             {lead.電話番号 && ` ・ ${lead.電話番号}`}
@@ -431,6 +441,8 @@ export default function LeadTable({
   // so switching lists always starts from the new preset instead of a stale filter.
   const [statusFilter, setStatusFilter] = useState<string>(presetFilter?.status ?? "all");
   const [callFilter, setCallFilter] = useState<"all" | "called" | "not_called">(presetFilter?.call ?? "all");
+  const [unsyncedOnly, setUnsyncedOnly] = useState(false);
+  const unsyncedCount = useMemo(() => leads.filter((lead) => lead.HubSpot連携).length, [leads]);
   const [regionFilter, setRegionFilter] = useState(presetFilter?.region ?? "");
   const [keyword, setKeyword] = useState(presetFilter?.keyword ?? "");
   const [sortKey, setSortKey] = useState<"score" | "date" | "name" | "call">("score");
@@ -488,6 +500,9 @@ export default function LeadTable({
     } else if (callFilter === "not_called") {
       rows = rows.filter((lead) => !lead.架電日);
     }
+    if (unsyncedOnly) {
+      rows = rows.filter((lead) => Boolean(lead.HubSpot連携));
+    }
     const regionTerms = regionFilter
       .split(",")
       .map((term) => term.trim())
@@ -534,6 +549,7 @@ export default function LeadTable({
     });
   }, [
     leads,
+    unsyncedOnly,
     statusFilter,
     callFilter,
     regionFilter,
@@ -626,6 +642,13 @@ export default function LeadTable({
           <option value="called">架電済み</option>
           <option value="not_called">未架電</option>
         </select>
+
+        {unsyncedCount > 0 && (
+          <label className="flex items-center gap-1.5 text-sm text-amber-700">
+            <input type="checkbox" checked={unsyncedOnly} onChange={(e) => setUnsyncedOnly(e.target.checked)} />
+            HubSpot未反映のみ（{unsyncedCount}件）
+          </label>
+        )}
 
         <input
           value={regionFilter}

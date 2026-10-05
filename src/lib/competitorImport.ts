@@ -154,6 +154,7 @@ export async function executeCompetitorMerge(
     本文: "",
     下書きID: "",
     シェアレジメモ: "",
+    HubSpot連携: "",
   }));
   await appendLeads(accessToken, newRows);
 

@@ -85,14 +85,19 @@ const PHASE_VALUE_MAP: Record<string, string | null> = {
 };
 
 /**
- * 架電日・フェーズ・架電メモの3項目のみを、医療機関名が一致するHubSpot Companyへ反映する。
- * 一致するCompanyが無ければ新規作成する。HUBSPOT_ACCESS_TOKEN未設定の環境では何もしない。
+ * 架電日・フェーズ・架電メモの3項目のみを、医療機関名が一致するHubSpot Companyへ上書きする。
+ * 一致するCompanyが無い場合は何もせず "not_found" を返す——以前は新規作成していたが、表記ゆれの
+ * 重複Companyが量産されたため、HubSpotに既にある医療機関にだけ反映する方針に変更した（2026-10）。
+ * 呼び出し側は "not_found" のリードに「未反映」の印を付ける。HUBSPOT_ACCESS_TOKEN未設定の環境では "skipped"。
  * 書き込み先はHubSpot側に既存の3プロパティ（架電日=saishinkadenbi、フェーズ=ridochokkinsutetasu、
  * 架電メモ=ridokyuukadenmemo）。
  */
-export async function syncLeadToHubSpot(lead: LeadRow): Promise<void> {
+export async function syncLeadToHubSpot(lead: LeadRow): Promise<"synced" | "not_found" | "skipped"> {
   const headers = authHeaders();
-  if (!headers || !lead.医療機関名) return;
+  if (!headers || !lead.医療機関名) return "skipped";
+
+  const companyId = await findCompanyIdByName(lead.医療機関名, headers);
+  if (!companyId) return "not_found";
 
   const properties: Record<string, string> = {
     saishinkadenbi: toHubspotDate(lead.架電日),
@@ -101,23 +106,13 @@ export async function syncLeadToHubSpot(lead: LeadRow): Promise<void> {
   const mappedPhase = PHASE_VALUE_MAP[lead.ステータス];
   if (mappedPhase) properties.ridochokkinsutetasu = mappedPhase;
 
-  const companyId = await findCompanyIdByName(lead.医療機関名, headers);
-
-  if (companyId) {
-    const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/companies/${companyId}`, {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify({ properties }),
-    });
-    if (!res.ok) throw new Error(`HubSpot company update failed: ${res.status} ${await res.text()}`);
-  } else {
-    const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/companies`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ properties: { name: lead.医療機関名, ...properties } }),
-    });
-    if (!res.ok) throw new Error(`HubSpot company create failed: ${res.status} ${await res.text()}`);
-  }
+  const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/companies/${companyId}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ properties }),
+  });
+  if (!res.ok) throw new Error(`HubSpot company update failed: ${res.status} ${await res.text()}`);
+  return "synced";
 }
 
 /**

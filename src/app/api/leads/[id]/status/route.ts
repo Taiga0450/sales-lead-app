@@ -78,10 +78,24 @@ export async function POST(request: Request, ctx: RouteContext<"/api/leads/[id]/
     }
 
     if (body.status !== undefined || body.memo !== undefined || body.calledAt !== undefined) {
+      // HubSpotに一致する医療機関が無い（新規作成はしない）・反映エラーの場合は、リードに印を付けて
+      // アプリ上で「HubSpot未反映」と分かるようにする。反映できたら印を消す。
+      let syncMark = updated.HubSpot連携;
       try {
-        await syncLeadToHubSpot(updated);
+        const result = await syncLeadToHubSpot(updated);
+        if (result === "synced") syncMark = "";
+        if (result === "not_found") syncMark = "未反映";
       } catch (error) {
         console.error("HubSpot sync failed", error);
+        syncMark = "未反映（エラー）";
+      }
+      if (syncMark !== updated.HubSpot連携) {
+        try {
+          const marked = await updateLead(accessToken, id, { HubSpot連携: syncMark });
+          return NextResponse.json({ lead: marked });
+        } catch (error) {
+          console.error("HubSpot sync mark failed", error);
+        }
       }
     }
 

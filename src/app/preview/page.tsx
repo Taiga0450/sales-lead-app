@@ -35,6 +35,7 @@ const LEADS: LeadRow[] = [
     本文: "",
     下書きID: "",
     シェアレジメモ: "",
+    HubSpot連携: "未反映",
   },
   {
     id: "l2",
@@ -62,6 +63,7 @@ const LEADS: LeadRow[] = [
     本文: "サンプル本文",
     下書きID: "draft123",
     シェアレジメモ: "",
+    HubSpot連携: "",
   },
   {
     id: "l3",
@@ -89,6 +91,7 @@ const LEADS: LeadRow[] = [
     本文: "",
     下書きID: "",
     シェアレジメモ: "",
+    HubSpot連携: "",
   },
 ];
 

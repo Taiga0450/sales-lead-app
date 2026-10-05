@@ -35,6 +35,11 @@ export default async function LeadDetailPage(props: PageProps<"/leads/[id]">) {
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{lead.医療機関名}</h1>
+            {lead.HubSpot連携 && (
+              <p className="mt-1 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                HubSpot{lead.HubSpot連携}：HubSpotに医療機関名が一致するレコードが無いため反映されていません
+              </p>
+            )}
             <p className="mt-1 text-sm text-foreground/60">
               {lead.種別} ・ {lead.地域}
             </p>

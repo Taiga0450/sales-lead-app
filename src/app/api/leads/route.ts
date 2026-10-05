@@ -62,6 +62,7 @@ export async function POST(request: Request) {
     本文: "",
     下書きID: "",
     シェアレジメモ: "",
+    HubSpot連携: "",
   };
 
   try {
