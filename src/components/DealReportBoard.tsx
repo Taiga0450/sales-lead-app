@@ -971,6 +971,37 @@ export default function DealReportBoard({
   const currentPage = Math.min(page, totalPages);
   const pageItems = filtered.slice((currentPage - 1) * DEAL_PAGE_SIZE, currentPage * DEAL_PAGE_SIZE);
 
+  // 件数が多いと一番下までスクロールしないとページを送れないため、一覧の上と下の両方に同じページ送りを置く。
+  const pager = (
+    <div className="flex items-center justify-between rounded-2xl border border-border bg-surface px-5 py-3 shadow-sm">
+      <span className="text-xs text-foreground/50">
+        {(currentPage - 1) * DEAL_PAGE_SIZE + 1}〜{Math.min(currentPage * DEAL_PAGE_SIZE, filtered.length)}件 / 全{filtered.length}件
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={currentPage <= 1}
+          className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
+        >
+          ◀ 前へ
+        </button>
+        <span className="text-xs text-foreground/50">
+          {currentPage} / {totalPages}ページ
+        </span>
+        <button
+          type="button"
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={currentPage >= totalPages}
+          className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
+        >
+          次へ ▶
+        </button>
+      </div>
+    </div>
+  );
+
+
   // 確定売上: 取引ステージが「クローズ済み」の商談の見込み売上合計。契約締結日で判定すると、
   // 契約締結日をまだ入力していない過去のクローズ済み商談が漏れてしまう（CurrentPeriodStatusと同じ考え方）。
   const confirmedRevenue = filtered
@@ -1362,6 +1393,8 @@ export default function DealReportBoard({
         />
       )}
 
+      {filtered.length > 0 && pager}
+
       <div className="flex flex-col gap-3">
         {pageItems.map((deal) => (
           <DealCard
@@ -1379,34 +1412,7 @@ export default function DealReportBoard({
         )}
       </div>
 
-      {filtered.length > 0 && (
-        <div className="flex items-center justify-between rounded-2xl border border-border bg-surface px-5 py-3 shadow-sm">
-          <span className="text-xs text-foreground/50">
-            {(currentPage - 1) * DEAL_PAGE_SIZE + 1}〜{Math.min(currentPage * DEAL_PAGE_SIZE, filtered.length)}件 / 全{filtered.length}件
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-              className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
-            >
-              ◀ 前へ
-            </button>
-            <span className="text-xs text-foreground/50">
-              {currentPage} / {totalPages}ページ
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages}
-              className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
-            >
-              次へ ▶
-            </button>
-          </div>
-        </div>
-      )}
+      {filtered.length > 0 && pager}
     </div>
   );
 }

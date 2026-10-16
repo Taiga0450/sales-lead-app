@@ -461,11 +461,23 @@ async function ensureDealHearingSheet(sheets: sheets_v4.Sheets, spreadsheetId: s
   });
 }
 
+/**
+ * 過去の取り込みで、日付がスプレッドシートのシリアル値（例: 45767）のまま入っている行があるため、
+ * 読み込み時にYYYY-MM-DDへ直す（表示・期間の絞り込み・並び替えがずれないように）。
+ * Googleスプレッドシートのシリアル値は1899-12-30を0日目とする日数。
+ */
+function normalizeSheetDate(value: string): string {
+  if (!/^\d{5}$/.test(value)) return value;
+  return new Date(Date.UTC(1899, 11, 30) + Number(value) * 86400000).toISOString().slice(0, 10);
+}
+
 function rowToDealHearing(row: string[]): DealHearingRow {
   const hearing = {} as DealHearingRow;
   DEAL_HEARING_HEADERS.forEach((header, i) => {
     hearing[header] = row[i] ?? "";
   });
+  hearing.firstMeetingDate = normalizeSheetDate(hearing.firstMeetingDate);
+  hearing.contractDate = normalizeSheetDate(hearing.contractDate);
   return hearing;
 }
 
