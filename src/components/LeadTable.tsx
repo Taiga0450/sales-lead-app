@@ -586,6 +586,37 @@ export default function LeadTable({
   const currentPage = Math.min(page, totalPages);
   const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
+  // 件数が多いと一番下までスクロールしないとページを送れないため、一覧の上と下の両方に同じページ送りを置く。
+  const renderPager = (position: "top" | "bottom") => (
+    <div className={`flex items-center justify-between border-border px-5 py-3 ${position === "top" ? "border-b" : "border-t"}`}>
+      <span className="text-xs text-foreground/50">
+        {(currentPage - 1) * PAGE_SIZE + 1}〜{Math.min(currentPage * PAGE_SIZE, filtered.length)}件 / 全{filtered.length}件
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={currentPage <= 1}
+          className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
+        >
+          ◀ 前へ
+        </button>
+        <span className="text-xs text-foreground/50">
+          {currentPage} / {totalPages}ページ
+        </span>
+        <button
+          type="button"
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={currentPage >= totalPages}
+          className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
+        >
+          次へ ▶
+        </button>
+      </div>
+    </div>
+  );
+
+
   const [exporting, setExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<{ text: string; url?: string } | null>(null);
 
@@ -745,6 +776,8 @@ export default function LeadTable({
         )}
       </div>
 
+      {filtered.length > 0 && renderPager("top")}
+
       <div className={`grid ${GRID_COLS} gap-4 border-b border-border bg-brand-light/40 px-5 py-2.5 text-xs font-medium text-foreground/50`}>
         <span>架電日</span>
         <span>フェーズ</span>
@@ -771,34 +804,7 @@ export default function LeadTable({
         )}
       </div>
 
-      {filtered.length > 0 && (
-        <div className="flex items-center justify-between border-t border-border px-5 py-3">
-          <span className="text-xs text-foreground/50">
-            {(currentPage - 1) * PAGE_SIZE + 1}〜{Math.min(currentPage * PAGE_SIZE, filtered.length)}件 / 全{filtered.length}件
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-              className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
-            >
-              ◀ 前へ
-            </button>
-            <span className="text-xs text-foreground/50">
-              {currentPage} / {totalPages}ページ
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages}
-              className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground/60 hover:bg-brand-light disabled:opacity-40"
-            >
-              次へ ▶
-            </button>
-          </div>
-        </div>
-      )}
+      {filtered.length > 0 && renderPager("bottom")}
     </div>
   );
 }
