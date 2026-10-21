@@ -11,6 +11,7 @@ import { STAFF_WAGE_HEADERS } from "@/lib/staffWages";
 import type { StaffWageRow } from "@/lib/staffWages";
 import { SHIFT_BUDGET_HEADERS, type ShiftBudgetRow } from "@/lib/shiftBudget";
 import { SHIFT_SLOT_HEADERS, type ShiftSlotRow } from "@/lib/shiftSlots";
+import { CALL_PLAN_HEADERS, type CallPlanRow } from "@/lib/callPlans";
 import { MONTHLY_APO_HEADERS } from "@/lib/monthlyApo";
 import type { MonthlyApoRow } from "@/lib/monthlyApo";
 import { PUBLISHED_SHIFT_HEADERS } from "@/lib/publishedShifts";
@@ -1511,6 +1512,84 @@ export async function replaceShiftSlots(
       range: `${SHIFT_SLOTS_SHEET_NAME}!A2`,
       valueInputOption: "RAW",
       requestBody: { values: next.map((r) => SHIFT_SLOT_HEADERS.map((h) => r[h])) },
+    });
+  }
+  return next;
+}
+
+const CALL_PLANS_SHEET_NAME = "callPlans";
+const CALL_PLAN_LAST_COL = columnLetterAt(CALL_PLAN_HEADERS.length - 1);
+
+async function ensureCallPlansSheet(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  if (meta.data.sheets?.some((s) => s.properties?.title === CALL_PLANS_SHEET_NAME)) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: CALL_PLANS_SHEET_NAME } } }] },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${CALL_PLANS_SHEET_NAME}!A1:${CALL_PLAN_LAST_COL}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[...CALL_PLAN_HEADERS]] },
+  });
+}
+
+async function readCallPlanRows(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<CallPlanRow[]> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${CALL_PLANS_SHEET_NAME}!A2:${CALL_PLAN_LAST_COL}`,
+  });
+  return (res.data.values ?? [])
+    .filter((row) => row.some((cell) => cell))
+    .map((row) => {
+      const r = {} as CallPlanRow;
+      CALL_PLAN_HEADERS.forEach((header, i) => {
+        r[header] = (row as string[])[i] ?? "";
+      });
+      return r;
+    });
+}
+
+/** ホームの「エリア別の進み具合」で使う、月ごとの架電計画。 */
+export async function listCallPlans(accessToken: string): Promise<CallPlanRow[]> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureCallPlansSheet(sheets, spreadsheetId);
+  return readCallPlanRows(sheets, spreadsheetId);
+}
+
+/** 指定した月の計画を、渡した内容で丸ごと置き換える（月ごとに数件〜十数件なのでタブ全体を書き直す）。 */
+export async function replaceCallPlans(
+  accessToken: string,
+  month: string,
+  plans: { owner: string; pref: string; city: string; target: number; note: string }[],
+): Promise<CallPlanRow[]> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureCallPlansSheet(sheets, spreadsheetId);
+  const others = (await readCallPlanRows(sheets, spreadsheetId)).filter((r) => r.month !== month);
+  const updatedAt = new Date().toISOString();
+  const next: CallPlanRow[] = [
+    ...others,
+    ...plans.map((p) => ({
+      id: crypto.randomUUID(),
+      month,
+      owner: p.owner,
+      pref: p.pref,
+      city: p.city,
+      target: String(p.target),
+      note: p.note,
+      updatedAt,
+    })),
+  ];
+  await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${CALL_PLANS_SHEET_NAME}!A2:${CALL_PLAN_LAST_COL}` });
+  if (next.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${CALL_PLANS_SHEET_NAME}!A2`,
+      valueInputOption: "RAW",
+      requestBody: { values: next.map((r) => CALL_PLAN_HEADERS.map((h) => r[h])) },
     });
   }
   return next;
