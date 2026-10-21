@@ -8,7 +8,6 @@ import {
   listStaffWages,
   listMonthlyApo,
   listSalesTargets,
-  listSalesActuals,
 } from "@/lib/google/sheets";
 import { getHearingItems } from "@/lib/dealReportData";
 import { fiscalHalfRange, type HearingListItem } from "@/lib/dealHearing";
@@ -27,11 +26,12 @@ import {
   monthBudgetOf,
   weeklyBudgetRows,
 } from "@/lib/shiftBudget";
-import CurrentPeriodStatus, { halfContractedDealsOf } from "@/components/CurrentPeriodStatus";
+import CurrentPeriodStatus from "@/components/CurrentPeriodStatus";
+import { getRevenueStats } from "@/lib/hubspot";
 import HomeCallStats from "@/components/HomeCallStats";
 import AreaProgressCard from "@/components/AreaProgressCard";
 import BudgetMiniCard from "@/components/BudgetMiniCard";
-import SalesProgressCard from "@/components/SalesProgressCard";
+import SalesProgressCard, { type HalfSales } from "@/components/SalesProgressCard";
 import NeedsCheckCard from "@/components/NeedsCheckCard";
 
 /**
@@ -74,7 +74,12 @@ export default async function HomePage() {
 
   const today = jstToday();
   const month = today.slice(0, 7);
-  const [shifts, leads, planRows, dealItems, targets, actuals, budget] = await Promise.all([
+  const fiscalYear = Number(today.slice(5, 7)) >= 4 ? Number(today.slice(0, 4)) : Number(today.slice(0, 4)) - 1;
+  const HALVES = [
+    { half: "上半期" as const, start: `${fiscalYear}-04-01`, end: `${fiscalYear}-09-30`, rangeLabel: "4/1〜9/30" },
+    { half: "下半期" as const, start: `${fiscalYear}-10-01`, end: `${fiscalYear + 1}-03-31`, rangeLabel: "10/1〜3/31" },
+  ];
+  const [shifts, leads, planRows, dealItems, targets, revenueByHalf, budget] = await Promise.all([
     listCallShifts(accessToken),
     listLeads(accessToken),
     listCallPlans(accessToken),
@@ -86,10 +91,17 @@ export default async function HomePage() {
       console.error("home: target fetch failed", err);
       return [];
     }),
-    listSalesActuals(accessToken).catch((err) => {
-      console.error("home: sales actual fetch failed", err);
-      return [];
-    }),
+    // 売上の実績はHubSpotの関東の受注金額を半期ごとに自動集計（売上画面と同じ計算）
+    Promise.all(
+      HALVES.map((h) =>
+        getRevenueStats(h.start, h.end)
+          .then((r) => ({ actual: r.regionTotals["関東"].wonAmount, wonCount: r.regionTotals["関東"].wonCount, error: null }))
+          .catch((err) => {
+            console.error("home: revenue fetch failed", err);
+            return { actual: 0, wonCount: 0, error: err instanceof Error ? err.message.slice(0, 120) : "取得に失敗しました" };
+          }),
+      ),
+    ),
     isSupervisor
       ? monthBudgetSummary(accessToken, month).catch((err) => {
           console.error("home: budget fetch failed", err);
@@ -111,17 +123,17 @@ export default async function HomePage() {
   const monthLabel = periodOf("month", today).label;
   const nowJst = new Date(`${today}T12:00:00+09:00`);
   const half = fiscalHalfRange(nowJst);
-  const actualRow = actuals.find(
-    (a) => a.fiscalYear === String(half.fiscalYear) && a.periodLabel === half.half && a.region === "関東",
-  );
-  const kantoActual = actualRow && actualRow.actualAmount !== "" ? Number(actualRow.actualAmount) || 0 : null;
-  const referenceRevenue = halfContractedDealsOf(dealItems, nowJst).reduce((sum, d) => sum + (d.expectedRevenue ?? 0), 0);
-  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
-  const targetOf = (region: string) =>
+  const targetFor = (periodLabel: string) =>
     Number(
-      targets.findLast((t) => t.fiscalYear === String(half.fiscalYear) && t.periodLabel === half.half && t.region === region)
+      targets.findLast((t) => t.fiscalYear === String(fiscalYear) && t.periodLabel === periodLabel && t.region === "関東")
         ?.targetAmount ?? 0,
     ) || 0;
+  const halves: HalfSales[] = HALVES.map((h, i) => ({
+    half: h.half,
+    rangeLabel: h.rangeLabel,
+    target: targetFor(h.half),
+    ...revenueByHalf[i],
+  }));
   // 架電したのにフェーズが「未活動」のまま（更新漏れ）のリード。委託分は入力時にフェーズを入れるので除く。
   const phaseNotUpdated = leads.filter((l) => l.架電日 && (l.ステータス || "未活動") === "未活動").length;
   const progress = planProgress(plansOf(planRows, month), leads, month);
@@ -133,15 +145,7 @@ export default async function HomePage() {
         <p className="mt-1 text-sm text-foreground/60">架電の状況と、今月の計画・今期の商談の進み具合をまとめて確認できます</p>
       </div>
 
-      <SalesProgressCard
-        fiscalYear={half.fiscalYear}
-        half={half.half}
-        rangeLabel={`${md(half.startDate)}〜${md(half.endDate)}`}
-        target={targetOf("関東")}
-        actual={kantoActual}
-        reference={referenceRevenue}
-        canEdit={isSupervisor}
-      />
+      <SalesProgressCard fiscalYear={fiscalYear} halves={halves} currentHalf={half.half} canEdit={isSupervisor} />
 
       <HomeCallStats data={callStats} />
 

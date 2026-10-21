@@ -70,12 +70,12 @@ export default function HomePreviewPage() {
       </div>
       <SalesProgressCard
         fiscalYear={2026}
-        half="下半期"
-        rangeLabel="10/1〜3/31"
-        target={20000000}
-        actual={7350000}
-        reference={6900000}
+        currentHalf="下半期"
         canEdit
+        halves={[
+          { half: "上半期", rangeLabel: "4/1〜9/30", target: 17000000, actual: 13351980, wonCount: 53 },
+          { half: "下半期", rangeLabel: "10/1〜3/31", target: 20000000, actual: 7350000, wonCount: 21 },
+        ]}
       />
       <HomeCallStats
         data={{
