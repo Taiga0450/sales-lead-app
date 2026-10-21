@@ -20,15 +20,24 @@ export interface HalfSales {
  * ホームの「売上の進捗（関東）」。実績はアプリの商談報告の受注（クローズ済み）から自動集計し、
  * 上半期/下半期を切り替えて目標・実績・残り・達成率を見る。目標は管理者のみ入力できる。
  */
+export interface PipelineStage {
+  stage: "口頭受注" | "見積提出" | "初回商談";
+  amount: number;
+  count: number;
+}
+
 export default function SalesProgressCard({
   fiscalYear,
   halves,
   currentHalf,
+  pipeline,
   canEdit,
 }: {
   fiscalYear: number;
   halves: HalfSales[];
   currentHalf: "上半期" | "下半期";
+  /** 今の時点で進行中の関東の商談（商談報告×Hubspot）の見込み売上。今期の表示にだけ出す。 */
+  pipeline: PipelineStage[];
   canEdit: boolean;
 }) {
   const router = useRouter();
@@ -40,6 +49,10 @@ export default function SalesProgressCard({
   const [error, setError] = useState<string | null>(null);
 
   const ratio = h.target > 0 ? h.actual / h.target : null;
+  const showPipeline = h.half === currentHalf && pipeline.some((p) => p.count > 0);
+  const verbal = pipeline.find((p) => p.stage === "口頭受注")?.amount ?? 0;
+  const pipelineTotal = pipeline.reduce((sum, p) => sum + p.amount, 0);
+  const withVerbalRatio = h.target > 0 ? (h.actual + verbal) / h.target : null;
   const remaining = h.target > 0 ? h.target - h.actual : null;
 
   async function save() {
@@ -175,14 +188,48 @@ export default function SalesProgressCard({
               </p>
             </div>
           </div>
-          <div className="mt-4 h-3 overflow-hidden rounded-full bg-border/70">
+          <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-border/70">
             <div
-              className={`h-full rounded-full ${ratio !== null && ratio >= 1 ? "bg-emerald-500" : "bg-brand"}`}
+              className={`h-full ${ratio !== null && ratio >= 1 ? "bg-emerald-500" : "bg-brand"}`}
               style={{ width: `${Math.min(100, (ratio ?? 0) * 100)}%`, transition: "width 700ms ease-out" }}
             />
+            {showPipeline && withVerbalRatio !== null && ratio !== null && ratio < 1 && (
+              <div
+                className="h-full bg-brand/35"
+                title="口頭受注の見込み売上"
+                style={{ width: `${Math.min(100 - ratio * 100, (withVerbalRatio - ratio) * 100)}%`, transition: "width 700ms ease-out" }}
+              />
+            )}
           </div>
+          {showPipeline && withVerbalRatio !== null && (
+            <p className="mt-1 flex items-center gap-1.5 text-[11px] text-foreground/50">
+              <span className="inline-block h-2 w-2 rounded-full bg-brand" /> 受注
+              <span className="ml-2 inline-block h-2 w-2 rounded-full bg-brand/35" /> 口頭受注まで含めると 達成率
+              <span className="font-semibold text-foreground">{(withVerbalRatio * 100).toFixed(1)}%</span>
+            </p>
+          )}
+
+          {showPipeline && (
+            <div className="mt-4 rounded-xl border border-border bg-background/50 p-3">
+              <div className="mb-2 flex items-baseline justify-between">
+                <p className="text-xs font-semibold text-foreground/60">見込み（進行中の商談）</p>
+                <p className="text-xs text-foreground/50">
+                  合計 <span className="text-base font-bold tabular-nums text-foreground">{yen(pipelineTotal)}</span>
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {pipeline.map((p) => (
+                  <div key={p.stage} className="rounded-lg bg-surface px-3 py-2 shadow-sm">
+                    <p className="text-[11px] text-foreground/50">{p.stage}</p>
+                    <p className="text-sm font-bold tabular-nums">{yen(p.amount)}</p>
+                    <p className="text-[10px] text-foreground/40">{p.count}件</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <p className="mt-2 text-[11px] text-foreground/40">
-            実績は、商談報告×Hubspotで「クローズ済み」（受注）になった関東（森・富田）の商談の見込み売上の合計です。契約締結日で上半期・下半期に振り分け、契約締結日が未入力の商談は今期に含めています。
+            実績・見込みとも、商談報告×Hubspotの関東（森・富田）の商談の見込み売上です。実績は「クローズ済み」（受注）を契約締結日で上半期・下半期に振り分け、契約締結日が未入力の商談は今期に含めています。見込みは、今まだ受注していない商談の合計です。
           </p>
         </>
       )}

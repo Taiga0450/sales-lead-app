@@ -72,6 +72,11 @@ export default function HomePreviewPage() {
         fiscalYear={2026}
         currentHalf="下半期"
         canEdit
+        pipeline={[
+          { stage: "口頭受注", amount: 8379800, count: 6 },
+          { stage: "見積提出", amount: 16210250, count: 50 },
+          { stage: "初回商談", amount: 4825200, count: 28 },
+        ]}
         halves={[
           { half: "上半期", rangeLabel: "4/1〜9/30", target: 17000000, actual: 13351980, wonCount: 53 },
           { half: "下半期", rangeLabel: "10/1〜3/31", target: 20000000, actual: 7350000, wonCount: 21 },
