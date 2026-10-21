@@ -27,7 +27,7 @@ import {
   weeklyBudgetRows,
 } from "@/lib/shiftBudget";
 import CurrentPeriodStatus from "@/components/CurrentPeriodStatus";
-import { getRevenueStats } from "@/lib/hubspot";
+import { ownerShortNamesOf } from "@/lib/hubspot";
 import HomeCallStats from "@/components/HomeCallStats";
 import AreaProgressCard from "@/components/AreaProgressCard";
 import BudgetMiniCard from "@/components/BudgetMiniCard";
@@ -79,7 +79,7 @@ export default async function HomePage() {
     { half: "上半期" as const, start: `${fiscalYear}-04-01`, end: `${fiscalYear}-09-30`, rangeLabel: "4/1〜9/30" },
     { half: "下半期" as const, start: `${fiscalYear}-10-01`, end: `${fiscalYear + 1}-03-31`, rangeLabel: "10/1〜3/31" },
   ];
-  const [shifts, leads, planRows, dealItems, targets, revenueByHalf, budget] = await Promise.all([
+  const [shifts, leads, planRows, dealItems, targets, budget] = await Promise.all([
     listCallShifts(accessToken),
     listLeads(accessToken),
     listCallPlans(accessToken),
@@ -91,17 +91,6 @@ export default async function HomePage() {
       console.error("home: target fetch failed", err);
       return [];
     }),
-    // 売上の実績はHubSpotの関東の受注金額を半期ごとに自動集計（売上画面と同じ計算）
-    Promise.all(
-      HALVES.map((h) =>
-        getRevenueStats(h.start, h.end)
-          .then((r) => ({ actual: r.regionTotals["関東"].wonAmount, wonCount: r.regionTotals["関東"].wonCount, error: null }))
-          .catch((err) => {
-            console.error("home: revenue fetch failed", err);
-            return { actual: 0, wonCount: 0, error: err instanceof Error ? err.message.slice(0, 120) : "取得に失敗しました" };
-          }),
-      ),
-    ),
     isSupervisor
       ? monthBudgetSummary(accessToken, month).catch((err) => {
           console.error("home: budget fetch failed", err);
@@ -128,12 +117,23 @@ export default async function HomePage() {
       targets.findLast((t) => t.fiscalYear === String(fiscalYear) && t.periodLabel === periodLabel && t.region === "関東")
         ?.targetAmount ?? 0,
     ) || 0;
-  const halves: HalfSales[] = HALVES.map((h, i) => ({
-    half: h.half,
-    rangeLabel: h.rangeLabel,
-    target: targetFor(h.half),
-    ...revenueByHalf[i],
-  }));
+  // 売上の実績は、アプリの商談報告で「クローズ済み」（受注）になった関東の担当者の商談の見込み売上を、
+  // 契約締結日で半期に振り分けて合計する。契約締結日が未入力の商談は、今期の分として数える
+  // （「今期の商談状況」と同じ扱い）。
+  const kantoOwners = new Set(ownerShortNamesOf("関東"));
+  const kantoWon = dealItems.filter((d) => d.dealStage === "クローズ済み" && kantoOwners.has(d.ownerName));
+  const halves: HalfSales[] = HALVES.map((h) => {
+    const won = kantoWon.filter((d) =>
+      d.contractDate ? d.contractDate >= h.start && d.contractDate <= h.end : h.half === half.half,
+    );
+    return {
+      half: h.half,
+      rangeLabel: h.rangeLabel,
+      target: targetFor(h.half),
+      actual: won.reduce((sum, d) => sum + (d.expectedRevenue ?? 0), 0),
+      wonCount: won.length,
+    };
+  });
   // 架電したのにフェーズが「未活動」のまま（更新漏れ）のリード。委託分は入力時にフェーズを入れるので除く。
   const phaseNotUpdated = leads.filter((l) => l.架電日 && (l.ステータス || "未活動") === "未活動").length;
   const progress = planProgress(plansOf(planRows, month), leads, month);

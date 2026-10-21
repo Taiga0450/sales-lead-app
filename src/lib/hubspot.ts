@@ -751,6 +751,13 @@ const SALES_OWNERS: Record<string, { name: string; region: SalesRegion }> = {
  * 商談報告×Hubspot画面の「担当者」選択肢用。アプリのログイン（Google）とHubSpotの
  * 商談オーナーは別々のID体系のため、新規商談作成時は担当者を手動で選んでもらう。
  */
+/** 地域ごとの担当者の短い表記（商談報告の担当者欄と同じ「森」「富田」など）。売上の進捗を地域別に集計する用。 */
+export function ownerShortNamesOf(region: SalesRegion): string[] {
+  return Object.values(SALES_OWNERS)
+    .filter((o) => o.region === region)
+    .map((o) => shortOwnerName(o.name));
+}
+
 export const HEARING_OWNERS = Object.entries(SALES_OWNERS).map(([ownerId, info]) => ({ ownerId, name: info.name }));
 
 /**

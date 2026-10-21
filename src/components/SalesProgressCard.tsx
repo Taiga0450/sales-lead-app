@@ -9,15 +9,15 @@ export interface HalfSales {
   half: "上半期" | "下半期";
   rangeLabel: string;
   target: number;
-  /** HubSpotの関東の受注金額（契約締結日がこの半期に入る成約取引の月額利用料の合計） */
+  /** 商談報告で「クローズ済み」（受注）の関東の商談の見込み売上の合計（契約締結日でこの半期に入るもの） */
   actual: number;
   wonCount: number;
-  /** HubSpotから取得できなかった場合のメッセージ */
+  /** 読み込めなかった場合のメッセージ */
   error?: string | null;
 }
 
 /**
- * ホームの「売上の進捗（関東）」。実績はHubSpotの関東の受注金額を自動集計し（売上画面と同じ計算）、
+ * ホームの「売上の進捗（関東）」。実績はアプリの商談報告の受注（クローズ済み）から自動集計し、
  * 上半期/下半期を切り替えて目標・実績・残り・達成率を見る。目標は管理者のみ入力できる。
  */
 export default function SalesProgressCard({
@@ -145,7 +145,7 @@ export default function SalesProgressCard({
       )}
 
       {h.error ? (
-        <p className="text-sm text-amber-700">売上の実績をHubSpotから読み込めませんでした（{h.error}）</p>
+        <p className="text-sm text-amber-700">売上の実績を読み込めませんでした（{h.error}）</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -182,7 +182,7 @@ export default function SalesProgressCard({
             />
           </div>
           <p className="mt-2 text-[11px] text-foreground/40">
-            実績はHubSpotで成約（Closed Won）した関東（森・富田）の取引の月額利用料の合計です。契約締結日（未入力なら成約日）で上半期・下半期に振り分けています。
+            実績は、商談報告×Hubspotで「クローズ済み」（受注）になった関東（森・富田）の商談の見込み売上の合計です。契約締結日で上半期・下半期に振り分け、契約締結日が未入力の商談は今期に含めています。
           </p>
         </>
       )}
