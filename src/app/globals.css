@@ -1,13 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f5f2;
-  --foreground: #1c1a24;
+  /* 落ち着いたオフホワイトの背景に白いカードを載せ、ブランドの水色はアクセントだけに使う */
+  --background: #f4f6f8;
+  --foreground: #0f172a;
   --surface: #ffffff;
-  --border: #e7e2da;
-  --brand: #0eb0ce;
-  --brand-light: #e3f6fa;
-  --ink: #3a3a3a;
+  --border: #e4e7ec;
+  --brand: #0aa5c2;
+  --brand-light: #e6f6f9;
+  --ink: #334155;
   --accent: #0d9488;
 }
 
@@ -26,6 +27,35 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), "Hiragino Sans", "Yu Gothic", sans-serif;
+  /* 和文の字間を詰めて、見出し・数字をすっきり見せる */
+  font-feature-settings: "palt" 1;
+  letter-spacing: 0.01em;
+}
+
+/* 数字は桁がそろう等幅数字にする（表・KPIの縦の並びが揃って読みやすくなる） */
+table,
+input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 入力欄にフォーカスしたとき、ブランドカラーの柔らかいリングで分かるようにする */
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+/* カード・パネル共通の影を、くっきりした線ではなく薄い広がりのある影にする */
+.shadow-sm {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 4px 16px -6px rgba(15, 23, 42, 0.08) !important;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--brand) 22%, transparent);
 }
 
 /* カーソルを合わせた操作要素（ボタン・リンク・アコーディオン見出し）が
@@ -40,7 +70,7 @@ button:not(:disabled):hover,
 a[href]:hover,
 summary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 12px -6px rgba(15, 23, 42, 0.22);
 }
 
 /* 読み込み中の進捗バー（loading.tsx）。終わる時間が分からないので、左から右へ流し続ける。 */

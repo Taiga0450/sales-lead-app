@@ -125,6 +125,27 @@ const UPSELL_NAV_ITEM = { href: "/admin/upsell-extract", label: "アップセル
 // シェアレジ担当者はリードのメモ記録だけを行うため、オンコール営業向けの項目は表示しない。
 const SHAREREGI_VISIBLE_HREFS = new Set(["/leads"]);
 
+type NavItem = { href: string; label: string; icon: () => React.ReactElement };
+
+/** サイドバーの1項目。今いる画面は、左端のバーと淡い背景で示す。 */
+function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
+  const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+  const Icon = item.icon;
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+        active ? "bg-brand-light font-semibold text-brand" : "font-medium text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
+      }`}
+    >
+      {active && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-brand" aria-hidden />}
+      <Icon />
+      <span>{item.label}</span>
+    </Link>
+  );
+}
+
 export default function Sidebar({
   sharedAccountKey = null,
   isSupervisor = false,
@@ -140,11 +161,7 @@ export default function Sidebar({
     sharedAccountKey === "shareregi"
       ? NAV_ITEMS.filter((item) => SHAREREGI_VISIBLE_HREFS.has(item.href))
       : NAV_ITEMS;
-  const navItems = [
-    ...baseItems,
-    ...(isSupervisor ? ADMIN_NAV_ITEMS : []),
-    ...(showUpsell ? [UPSELL_NAV_ITEM] : []),
-  ];
+  const adminItems = [...(isSupervisor ? ADMIN_NAV_ITEMS : []), ...(showUpsell ? [UPSELL_NAV_ITEM] : [])];
 
   if (collapsed) {
     return (
@@ -160,7 +177,7 @@ export default function Sidebar({
   }
 
   return (
-    <aside className="m-3 flex w-60 shrink-0 flex-col gap-1 rounded-2xl border border-border bg-surface px-3 py-5 shadow-sm">
+    <aside className="sticky top-3 m-3 flex h-[calc(100vh-1.5rem)] w-60 shrink-0 flex-col overflow-y-auto rounded-2xl border border-border bg-surface px-3 py-5 shadow-sm">
       <div className="mb-6 flex items-center justify-between px-2">
         <Logo />
         <button
@@ -172,24 +189,19 @@ export default function Sidebar({
           «
         </button>
       </div>
-      {navItems.map((item) => {
-        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all ${
-              active
-                ? "bg-brand-light font-semibold text-brand shadow-[0_2px_8px_-2px_rgba(14,176,206,0.35)] ring-1 ring-brand/15"
-                : "font-medium text-foreground/60 hover:bg-brand-light/60 hover:text-brand"
-            }`}
-          >
-            <Icon />
-            <span>{item.label}</span>
-          </Link>
-        );
-      })}
+      <nav className="flex flex-col gap-0.5">
+        {baseItems.map((item) => (
+          <NavLink key={item.href} item={item} pathname={pathname} />
+        ))}
+      </nav>
+      {adminItems.length > 0 && (
+        <nav className="mt-5 flex flex-col gap-0.5 border-t border-border pt-4">
+          <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-foreground/35">管理</p>
+          {adminItems.map((item) => (
+            <NavLink key={item.href} item={item} pathname={pathname} />
+          ))}
+        </nav>
+      )}
     </aside>
   );
 }

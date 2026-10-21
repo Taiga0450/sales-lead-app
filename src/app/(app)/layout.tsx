@@ -22,11 +22,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Sidebar sharedAccountKey={sharedAccountKey} isSupervisor={isSupervisor} showUpsell={showUpsell} />
 
       <div className="flex min-h-full flex-1 flex-col">
-        <header className="border-b border-border bg-surface">
-          <div className="flex items-center justify-end gap-4 px-6 py-4">
+        <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-md">
+          <div className="flex items-center justify-end gap-3 px-6 py-3">
             {session?.user?.email && isSharedAccountEmail(session.user.email) && <ActingAsBanner />}
             {session?.user?.email && (
-              <span className="text-sm text-foreground/60">{session.user.email}</span>
+              <span className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-foreground/60">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-white">
+                  {session.user.email.slice(0, 1).toUpperCase()}
+                </span>
+                {session.user.email}
+              </span>
             )}
             <form
               action={async () => {
@@ -36,7 +41,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             >
               <button
                 type="submit"
-                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground/70 transition hover:bg-zinc-50"
+                className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-semibold text-foreground/60 transition hover:text-foreground"
               >
                 ログアウト
               </button>
@@ -44,7 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        <main className="w-full flex-1 px-6 py-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-8">{children}</main>
       </div>
     </div>
   );

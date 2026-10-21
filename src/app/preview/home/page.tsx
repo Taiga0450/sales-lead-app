@@ -2,6 +2,7 @@ import HomeCallStats from "@/components/HomeCallStats";
 import AreaProgressCard from "@/components/AreaProgressCard";
 import BudgetMiniCard from "@/components/BudgetMiniCard";
 import CurrentPeriodStatus from "@/components/CurrentPeriodStatus";
+import Sidebar from "@/components/Sidebar";
 import type { PeriodSummary } from "@/lib/homeStats";
 import type { PlanProgress } from "@/lib/callPlans";
 
@@ -58,7 +59,9 @@ const PROGRESS: PlanProgress[] = [
 
 export default function HomePreviewPage() {
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-8">
+    <div className="flex min-h-full flex-1">
+      <Sidebar isSupervisor showUpsell />
+    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-8 px-6 py-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">ホーム（プレビュー）</h1>
         <p className="mt-1 text-sm text-foreground/60">サンプルデータでの見た目確認用ページです</p>
@@ -74,6 +77,7 @@ export default function HomePreviewPage() {
         <CurrentPeriodStatus items={[]} currentHalfTarget={0} />
         <BudgetMiniCard monthLabel="2026年10月" budget={300000} spent={182000} />
       </div>
+    </div>
     </div>
   );
 }

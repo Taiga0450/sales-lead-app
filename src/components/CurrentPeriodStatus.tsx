@@ -47,22 +47,29 @@ export default function CurrentPeriodStatus({
   const halfConfirmedRevenue = halfContractedDeals.reduce((sum, d) => sum + (d.expectedRevenue ?? 0), 0);
 
   return (
-    <div className="rounded-2xl border border-border bg-brand-light/20 p-5 shadow-sm">
-      <h3 className="mb-3 text-sm font-bold text-foreground/70">
-        今期の状況（{currentHalf.fiscalYear}年度{currentHalf.half}）
-      </h3>
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+      <div className="mb-4">
+        <h2 className="text-lg font-bold tracking-tight">今期の商談状況</h2>
+        <p className="text-sm text-foreground/50">
+          {currentHalf.fiscalYear}年度{currentHalf.half}
+          <span className="ml-1.5 rounded-md bg-foreground/5 px-1.5 py-0.5 text-xs">
+            {Number(currentHalf.startDate.slice(5, 7))}/{Number(currentHalf.startDate.slice(8, 10))}〜
+            {Number(currentHalf.endDate.slice(5, 7))}/{Number(currentHalf.endDate.slice(8, 10))}
+          </span>
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div>
           <p className="text-xs text-foreground/50">今月の新規商談数</p>
-          <p className="text-2xl font-bold">{thisMonthNewDeals}件</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight">{thisMonthNewDeals}件</p>
         </div>
         <div>
           <p className="text-xs text-foreground/50">今期の初回商談数</p>
-          <p className="text-2xl font-bold">{halfFirstMeetings}件</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight">{halfFirstMeetings}件</p>
         </div>
         <div>
           <p className="text-xs text-foreground/50">今期の契約締結数</p>
-          <p className="text-2xl font-bold text-emerald-600">{halfContractedDeals.length}件</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight text-emerald-600">{halfContractedDeals.length}件</p>
         </div>
         <div className="flex flex-col items-center">
           <p className="text-xs text-foreground/50">目標までの進捗</p>
