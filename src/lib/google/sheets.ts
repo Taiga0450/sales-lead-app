@@ -437,6 +437,43 @@ export async function createSalesTarget(
   return newTarget;
 }
 
+/**
+ * 年度×上期/下期×地域の目標額を1行だけ持つように上書き（無ければ追加）する。ホームの「目標を設定」用。
+ * 期間は会計年度の上半期(4/1〜9/30)・下半期(10/1〜翌3/31)。
+ */
+export async function upsertSalesTarget(
+  accessToken: string,
+  target: { fiscalYear: string; periodLabel: "上半期" | "下半期"; region: string; targetAmount: string },
+): Promise<void> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureTargetsSheet(sheets, spreadsheetId);
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${TARGETS_SHEET_NAME}!A2:H` });
+  const rows = (res.data.values ?? []) as string[][];
+  const col = (h: (typeof TARGET_HEADERS)[number]) => TARGET_HEADERS.indexOf(h);
+  const rowIndex = rows.findIndex(
+    (r) => r[col("fiscalYear")] === target.fiscalYear && r[col("periodLabel")] === target.periodLabel && r[col("region")] === target.region,
+  );
+  const y = Number(target.fiscalYear);
+  const [startDate, endDate] = target.periodLabel === "上半期" ? [`${y}-04-01`, `${y}-09-30`] : [`${y}-10-01`, `${y + 1}-03-31`];
+  if (rowIndex === -1) {
+    await createSalesTarget(accessToken, { ...target, startDate, endDate });
+    return;
+  }
+  const sheetRow = rowIndex + 2;
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: [
+        { range: `${TARGETS_SHEET_NAME}!${columnLetterAt(col("startDate"))}${sheetRow}`, values: [[startDate]] },
+        { range: `${TARGETS_SHEET_NAME}!${columnLetterAt(col("endDate"))}${sheetRow}`, values: [[endDate]] },
+        { range: `${TARGETS_SHEET_NAME}!${columnLetterAt(col("targetAmount"))}${sheetRow}`, values: [[target.targetAmount]] },
+      ],
+    },
+  });
+}
+
 const DEAL_HEARING_SHEET_NAME = "dealHearing";
 
 /**

@@ -9,10 +9,12 @@ export default function LeadsBoard({
   leads,
   assigneeOptions,
   canEditCallTracking = true,
+  initialPhaseCheck = false,
 }: {
   leads: LeadRow[];
   assigneeOptions: string[];
   canEditCallTracking?: boolean;
+  initialPhaseCheck?: boolean;
 }) {
   const [preset, setPreset] = useState<ListConditions | null>(null);
 
@@ -25,6 +27,7 @@ export default function LeadsBoard({
         presetFilter={preset}
         assigneeOptions={assigneeOptions}
         canEditCallTracking={canEditCallTracking}
+        initialPhaseCheck={initialPhaseCheck}
       />
     </div>
   );

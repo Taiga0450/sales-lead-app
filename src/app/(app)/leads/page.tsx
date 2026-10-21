@@ -13,7 +13,9 @@ import ShareRegiCallSummary from "@/components/ShareRegiCallSummary";
 import { listShareRegiCalls } from "@/lib/google/serviceSheets";
 import { canViewShareRegiStats, summarizeShareRegiCalls, type ShareRegiCallerStats } from "@/lib/shareRegiCalls";
 
-export default async function LeadsPage() {
+export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
+  // ホームの「要確認」から来た場合（?check=phase）は、フェーズ更新漏れの絞り込みを最初からオンにする
+  const { check } = await searchParams;
   const session = await requirePageSession();
   const accessToken = session.accessToken;
 
@@ -65,7 +67,12 @@ AI機能（自動リサーチ）は未設定です。手動追加で動作して
       <KpiCards leads={leads} />
       {/* シェアレジのアカウントには営業側の架電集計を出さない（件数が混ざって見えないように） */}
       {!isShareRegi && <TodayCallSummary leads={leads} />}
-      <LeadsBoard leads={leads} assigneeOptions={assigneeOptions} canEditCallTracking={!isShareRegi} />
+      <LeadsBoard
+        leads={leads}
+        assigneeOptions={assigneeOptions}
+        canEditCallTracking={!isShareRegi}
+        initialPhaseCheck={check === "phase"}
+      />
     </div>
   );
 }

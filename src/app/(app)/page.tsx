@@ -7,9 +7,10 @@ import {
   listShiftBudgets,
   listStaffWages,
   listMonthlyApo,
+  listSalesTargets,
 } from "@/lib/google/sheets";
-import { getHearingItems, getCurrentHalfKantoTarget } from "@/lib/dealReportData";
-import type { HearingListItem } from "@/lib/dealHearing";
+import { getHearingItems } from "@/lib/dealReportData";
+import { fiscalHalfRange, type HearingListItem } from "@/lib/dealHearing";
 import { getSharedAccountKey } from "@/lib/actingAs";
 import { isSupervisorEmail } from "@/lib/callShifts";
 import { jstToday, periodOf, summarizePeriod } from "@/lib/homeStats";
@@ -29,6 +30,8 @@ import CurrentPeriodStatus from "@/components/CurrentPeriodStatus";
 import HomeCallStats from "@/components/HomeCallStats";
 import AreaProgressCard from "@/components/AreaProgressCard";
 import BudgetMiniCard from "@/components/BudgetMiniCard";
+import TargetEditor from "@/components/TargetEditor";
+import NeedsCheckCard from "@/components/NeedsCheckCard";
 
 /**
  * 今月のIS販管費の使用額（シフト管理表と同じ計算）。カレンダーは管理者本人のトークンで読むため、
@@ -70,7 +73,7 @@ export default async function HomePage() {
 
   const today = jstToday();
   const month = today.slice(0, 7);
-  const [shifts, leads, planRows, dealItems, currentHalfTarget, budget] = await Promise.all([
+  const [shifts, leads, planRows, dealItems, targets, budget] = await Promise.all([
     listCallShifts(accessToken),
     listLeads(accessToken),
     listCallPlans(accessToken),
@@ -78,9 +81,9 @@ export default async function HomePage() {
       console.error("home: hearing items fetch failed", err);
       return [] as HearingListItem[];
     }),
-    getCurrentHalfKantoTarget(accessToken).catch((err) => {
+    listSalesTargets(accessToken).catch((err) => {
       console.error("home: target fetch failed", err);
-      return 0;
+      return [];
     }),
     isSupervisor
       ? monthBudgetSummary(accessToken, month).catch((err) => {
@@ -101,6 +104,14 @@ export default async function HomePage() {
     },
   };
   const monthLabel = periodOf("month", today).label;
+  const half = fiscalHalfRange(new Date(`${today}T12:00:00+09:00`));
+  const targetOf = (region: string) =>
+    Number(
+      targets.findLast((t) => t.fiscalYear === String(half.fiscalYear) && t.periodLabel === half.half && t.region === region)
+        ?.targetAmount ?? 0,
+    ) || 0;
+  // 架電したのにフェーズが「未活動」のまま（更新漏れ）のリード。委託分は入力時にフェーズを入れるので除く。
+  const phaseNotUpdated = leads.filter((l) => l.架電日 && (l.ステータス || "未活動") === "未活動").length;
   const progress = planProgress(plansOf(planRows, month), leads, month);
 
   return (
@@ -112,10 +123,20 @@ export default async function HomePage() {
 
       <HomeCallStats data={callStats} />
 
+      {phaseNotUpdated > 0 && <NeedsCheckCard phaseNotUpdated={phaseNotUpdated} />}
+
       <AreaProgressCard month={month} monthLabel={monthLabel} progress={progress} canEdit={isSupervisor} />
 
       <div className={`grid gap-6 ${budget ? "lg:grid-cols-[2fr_1fr]" : ""}`}>
-        <CurrentPeriodStatus items={dealItems} currentHalfTarget={currentHalfTarget} />
+        <CurrentPeriodStatus
+          items={dealItems}
+          currentHalfTarget={targetOf("関東")}
+          targetEditor={
+            isSupervisor ? (
+              <TargetEditor fiscalYear={half.fiscalYear} half={half.half} kanto={targetOf("関東")} osaka={targetOf("大阪")} />
+            ) : undefined
+          }
+        />
         {budget && (
           <BudgetMiniCard
             monthLabel={monthLabel}

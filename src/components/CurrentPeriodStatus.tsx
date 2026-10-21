@@ -24,9 +24,12 @@ const TRANSITION_HALF = "上半期";
 export default function CurrentPeriodStatus({
   items,
   currentHalfTarget = 0,
+  targetEditor,
 }: {
   items: HearingListItem[];
   currentHalfTarget?: number;
+  /** ホームで管理者にだけ出す「目標を設定」。商談報告×Hubspot画面では渡さない。 */
+  targetEditor?: React.ReactNode;
 }) {
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
@@ -48,7 +51,8 @@ export default function CurrentPeriodStatus({
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
         <h2 className="text-lg font-bold tracking-tight">今期の商談状況</h2>
         <p className="text-sm text-foreground/50">
           {currentHalf.fiscalYear}年度{currentHalf.half}
@@ -57,6 +61,8 @@ export default function CurrentPeriodStatus({
             {Number(currentHalf.endDate.slice(5, 7))}/{Number(currentHalf.endDate.slice(8, 10))}
           </span>
         </p>
+        </div>
+        {targetEditor}
       </div>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div>

@@ -3,6 +3,8 @@ import AreaProgressCard from "@/components/AreaProgressCard";
 import BudgetMiniCard from "@/components/BudgetMiniCard";
 import CurrentPeriodStatus from "@/components/CurrentPeriodStatus";
 import Sidebar from "@/components/Sidebar";
+import NeedsCheckCard from "@/components/NeedsCheckCard";
+import TargetEditor from "@/components/TargetEditor";
 import type { PeriodSummary } from "@/lib/homeStats";
 import type { PlanProgress } from "@/lib/callPlans";
 
@@ -72,9 +74,14 @@ export default function HomePreviewPage() {
           quarter: { current: summary("2026年度 Q3", "10/1〜12/31", 1), previous: summary("2026年度 Q2", "7/1〜9/30", 2.4) },
         }}
       />
+      <NeedsCheckCard phaseNotUpdated={12} />
       <AreaProgressCard month="2026-10" monthLabel="2026年10月" progress={PROGRESS} canEdit />
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-        <CurrentPeriodStatus items={[]} currentHalfTarget={0} />
+        <CurrentPeriodStatus
+          items={[]}
+          currentHalfTarget={0}
+          targetEditor={<TargetEditor fiscalYear={2026} half="下半期" kanto={0} osaka={0} />}
+        />
         <BudgetMiniCard monthLabel="2026年10月" budget={300000} spent={182000} />
       </div>
     </div>

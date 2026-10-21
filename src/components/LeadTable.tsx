@@ -429,12 +429,15 @@ export default function LeadTable({
   presetFilter,
   assigneeOptions = [],
   canEditCallTracking = true,
+  initialPhaseCheck = false,
 }: {
   leads: LeadRow[];
   presetFilter?: ListConditions | null;
   assigneeOptions?: string[];
   /** falseの場合、架電日・フェーズ・架電メモは閲覧専用になる（シェアレジ担当者向け）。 */
   canEditCallTracking?: boolean;
+  /** trueなら「架電済み・フェーズ未更新」の絞り込みをオンにした状態で開く（ホームの「要確認」から）。 */
+  initialPhaseCheck?: boolean;
 }) {
   // Initial state derives from presetFilter (a saved list's conditions). The parent
   // remounts this component with a fresh `key` whenever the selected list changes,
@@ -442,6 +445,11 @@ export default function LeadTable({
   const [statusFilter, setStatusFilter] = useState<string>(presetFilter?.status ?? "all");
   const [callFilter, setCallFilter] = useState<"all" | "called" | "not_called">(presetFilter?.call ?? "all");
   const [unsyncedOnly, setUnsyncedOnly] = useState(false);
+  const [phaseCheckOnly, setPhaseCheckOnly] = useState(initialPhaseCheck);
+  const phaseCheckCount = useMemo(
+    () => leads.filter((lead) => lead.架電日 && (lead.ステータス || "未活動") === "未活動").length,
+    [leads],
+  );
   const unsyncedCount = useMemo(() => leads.filter((lead) => lead.HubSpot連携).length, [leads]);
   const [regionFilter, setRegionFilter] = useState(presetFilter?.region ?? "");
   const [keyword, setKeyword] = useState(presetFilter?.keyword ?? "");
@@ -503,6 +511,9 @@ export default function LeadTable({
     if (unsyncedOnly) {
       rows = rows.filter((lead) => Boolean(lead.HubSpot連携));
     }
+    if (phaseCheckOnly) {
+      rows = rows.filter((lead) => lead.架電日 && (lead.ステータス || "未活動") === "未活動");
+    }
     const regionTerms = regionFilter
       .split(",")
       .map((term) => term.trim())
@@ -550,6 +561,7 @@ export default function LeadTable({
   }, [
     leads,
     unsyncedOnly,
+    phaseCheckOnly,
     statusFilter,
     callFilter,
     regionFilter,
@@ -673,6 +685,13 @@ export default function LeadTable({
           <option value="called">架電済み</option>
           <option value="not_called">未架電</option>
         </select>
+
+        {(phaseCheckCount > 0 || phaseCheckOnly) && (
+          <label className="flex items-center gap-1.5 text-sm text-amber-700">
+            <input type="checkbox" checked={phaseCheckOnly} onChange={(e) => setPhaseCheckOnly(e.target.checked)} />
+            架電済み・フェーズ未更新（{phaseCheckCount}件）
+          </label>
+        )}
 
         {unsyncedCount > 0 && (
           <label className="flex items-center gap-1.5 text-sm text-amber-700">
