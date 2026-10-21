@@ -36,7 +36,7 @@ export default function SalesProgressCard({
   fiscalYear: number;
   halves: HalfSales[];
   currentHalf: "上半期" | "下半期";
-  /** 今の時点で進行中の関東の商談（商談報告×Hubspot）の見込み売上。今期の表示にだけ出す。 */
+  /** 初回商談日が今期に入る、進行中の関東の商談（商談報告×Hubspot）の見込み売上。今期の表示にだけ出す。 */
   pipeline: PipelineStage[];
   canEdit: boolean;
 }) {
@@ -49,7 +49,7 @@ export default function SalesProgressCard({
   const [error, setError] = useState<string | null>(null);
 
   const ratio = h.target > 0 ? h.actual / h.target : null;
-  const showPipeline = h.half === currentHalf && pipeline.some((p) => p.count > 0);
+  const showPipeline = h.half === currentHalf;
   const verbal = pipeline.find((p) => p.stage === "口頭受注")?.amount ?? 0;
   const pipelineTotal = pipeline.reduce((sum, p) => sum + p.amount, 0);
   const withVerbalRatio = h.target > 0 ? (h.actual + verbal) / h.target : null;
@@ -212,7 +212,7 @@ export default function SalesProgressCard({
           {showPipeline && (
             <div className="mt-4 rounded-xl border border-border bg-background/50 p-3">
               <div className="mb-2 flex items-baseline justify-between">
-                <p className="text-xs font-semibold text-foreground/60">見込み（進行中の商談）</p>
+                <p className="text-xs font-semibold text-foreground/60">見込み（今期に初回商談した進行中の商談）</p>
                 <p className="text-xs text-foreground/50">
                   合計 <span className="text-base font-bold tabular-nums text-foreground">{yen(pipelineTotal)}</span>
                 </p>
@@ -229,7 +229,7 @@ export default function SalesProgressCard({
             </div>
           )}
           <p className="mt-2 text-[11px] text-foreground/40">
-            実績・見込みとも、商談報告×Hubspotの関東（森・富田）の商談の見込み売上です。実績は「クローズ済み」（受注）を契約締結日で上半期・下半期に振り分け、契約締結日が未入力の商談は今期に含めています。見込みは、今まだ受注していない商談の合計です。
+            実績・見込みとも、商談報告×Hubspotの関東（森・富田）の商談の見込み売上です。実績は「クローズ済み」（受注）を契約締結日（未入力なら初回商談日）で上半期・下半期に振り分けています。見込みは、今期に初回商談した商談のうち、まだ受注していないものの合計です。
           </p>
         </>
       )}

@@ -118,22 +118,25 @@ export default async function HomePage() {
         ?.targetAmount ?? 0,
     ) || 0;
   // 売上の実績は、アプリの商談報告で「クローズ済み」（受注）になった関東の担当者の商談の見込み売上を、
-  // 契約締結日で半期に振り分けて合計する。契約締結日が未入力の商談は、今期の分として数える
-  // （「今期の商談状況」と同じ扱い）。
+  // 契約締結日で半期に振り分けて合計する。契約締結日が未入力の商談は初回商談日で振り分ける
+  // （前の期の商談が今期に紛れ込まないように。2026-10 ユーザー指示「今の期間は下半期のみでよい」）。
   const kantoOwners = new Set(ownerShortNamesOf("関東"));
   const kantoWon = dealItems.filter((d) => d.dealStage === "クローズ済み" && kantoOwners.has(d.ownerName));
-  // 見込み：まだ受注していない（初回商談〜口頭受注の）関東の商談の見込み売上。今の時点の商談の状況なので、
-  // 半期には振り分けず今期の表示にだけ出す。
+  // 見込み：まだ受注していない（初回商談〜口頭受注の）関東の商談のうち、初回商談日が今期に入るものの見込み売上。
+  // 前の期から続いている商談は含めない（今期の表示にだけ出す）。
   const PIPELINE_STAGES = ["口頭受注", "見積提出", "初回商談"] as const;
-  const kantoOpen = dealItems.filter((d) => kantoOwners.has(d.ownerName));
+  const kantoOpen = dealItems.filter(
+    (d) => kantoOwners.has(d.ownerName) && d.firstMeetingDate >= half.startDate && d.firstMeetingDate <= half.endDate,
+  );
   const pipeline = PIPELINE_STAGES.map((stage) => {
     const deals = kantoOpen.filter((d) => d.dealStage === stage);
     return { stage, amount: deals.reduce((sum, d) => sum + (d.expectedRevenue ?? 0), 0), count: deals.length };
   });
   const halves: HalfSales[] = HALVES.map((h) => {
-    const won = kantoWon.filter((d) =>
-      d.contractDate ? d.contractDate >= h.start && d.contractDate <= h.end : h.half === half.half,
-    );
+    const won = kantoWon.filter((d) => {
+      const date = d.contractDate || d.firstMeetingDate;
+      return !!date && date >= h.start && date <= h.end;
+    });
     return {
       half: h.half,
       rangeLabel: h.rangeLabel,
