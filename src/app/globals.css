@@ -42,3 +42,13 @@ summary:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.18);
 }
+
+/* 読み込み中の進捗バー（loading.tsx）。終わる時間が分からないので、左から右へ流し続ける。 */
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
