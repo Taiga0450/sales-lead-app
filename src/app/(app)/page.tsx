@@ -8,6 +8,7 @@ import {
   listStaffWages,
   listMonthlyApo,
   listSalesTargets,
+  listSalesActuals,
 } from "@/lib/google/sheets";
 import { getHearingItems } from "@/lib/dealReportData";
 import { fiscalHalfRange, type HearingListItem } from "@/lib/dealHearing";
@@ -26,11 +27,11 @@ import {
   monthBudgetOf,
   weeklyBudgetRows,
 } from "@/lib/shiftBudget";
-import CurrentPeriodStatus from "@/components/CurrentPeriodStatus";
+import CurrentPeriodStatus, { halfContractedDealsOf } from "@/components/CurrentPeriodStatus";
 import HomeCallStats from "@/components/HomeCallStats";
 import AreaProgressCard from "@/components/AreaProgressCard";
 import BudgetMiniCard from "@/components/BudgetMiniCard";
-import TargetEditor from "@/components/TargetEditor";
+import SalesProgressCard from "@/components/SalesProgressCard";
 import NeedsCheckCard from "@/components/NeedsCheckCard";
 
 /**
@@ -73,7 +74,7 @@ export default async function HomePage() {
 
   const today = jstToday();
   const month = today.slice(0, 7);
-  const [shifts, leads, planRows, dealItems, targets, budget] = await Promise.all([
+  const [shifts, leads, planRows, dealItems, targets, actuals, budget] = await Promise.all([
     listCallShifts(accessToken),
     listLeads(accessToken),
     listCallPlans(accessToken),
@@ -83,6 +84,10 @@ export default async function HomePage() {
     }),
     listSalesTargets(accessToken).catch((err) => {
       console.error("home: target fetch failed", err);
+      return [];
+    }),
+    listSalesActuals(accessToken).catch((err) => {
+      console.error("home: sales actual fetch failed", err);
       return [];
     }),
     isSupervisor
@@ -104,7 +109,14 @@ export default async function HomePage() {
     },
   };
   const monthLabel = periodOf("month", today).label;
-  const half = fiscalHalfRange(new Date(`${today}T12:00:00+09:00`));
+  const nowJst = new Date(`${today}T12:00:00+09:00`);
+  const half = fiscalHalfRange(nowJst);
+  const actualRow = actuals.find(
+    (a) => a.fiscalYear === String(half.fiscalYear) && a.periodLabel === half.half && a.region === "関東",
+  );
+  const kantoActual = actualRow && actualRow.actualAmount !== "" ? Number(actualRow.actualAmount) || 0 : null;
+  const referenceRevenue = halfContractedDealsOf(dealItems, nowJst).reduce((sum, d) => sum + (d.expectedRevenue ?? 0), 0);
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const targetOf = (region: string) =>
     Number(
       targets.findLast((t) => t.fiscalYear === String(half.fiscalYear) && t.periodLabel === half.half && t.region === region)
@@ -121,6 +133,16 @@ export default async function HomePage() {
         <p className="mt-1 text-sm text-foreground/60">架電の状況と、今月の計画・今期の商談の進み具合をまとめて確認できます</p>
       </div>
 
+      <SalesProgressCard
+        fiscalYear={half.fiscalYear}
+        half={half.half}
+        rangeLabel={`${md(half.startDate)}〜${md(half.endDate)}`}
+        target={targetOf("関東")}
+        actual={kantoActual}
+        reference={referenceRevenue}
+        canEdit={isSupervisor}
+      />
+
       <HomeCallStats data={callStats} />
 
       {phaseNotUpdated > 0 && <NeedsCheckCard phaseNotUpdated={phaseNotUpdated} />}
@@ -128,15 +150,7 @@ export default async function HomePage() {
       <AreaProgressCard month={month} monthLabel={monthLabel} progress={progress} canEdit={isSupervisor} />
 
       <div className={`grid gap-6 ${budget ? "lg:grid-cols-[2fr_1fr]" : ""}`}>
-        <CurrentPeriodStatus
-          items={dealItems}
-          currentHalfTarget={targetOf("関東")}
-          targetEditor={
-            isSupervisor ? (
-              <TargetEditor fiscalYear={half.fiscalYear} half={half.half} kanto={targetOf("関東")} osaka={targetOf("大阪")} />
-            ) : undefined
-          }
-        />
+        <CurrentPeriodStatus items={dealItems} showGoal={false} />
         {budget && (
           <BudgetMiniCard
             monthLabel={monthLabel}

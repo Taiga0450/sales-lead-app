@@ -21,15 +21,27 @@ function yen(v: number): string {
  */
 const TRANSITION_FISCAL_YEAR = 2026;
 const TRANSITION_HALF = "上半期";
+/** 今期に契約締結した（クローズ済みの）商談。判定ルールは上のコメントのとおり。ホームの売上の参考値にも使う。 */
+export function halfContractedDealsOf(items: HearingListItem[], now: Date): HearingListItem[] {
+  const currentHalf = fiscalHalfRange(now);
+  const isTransitionPeriod = currentHalf.fiscalYear === TRANSITION_FISCAL_YEAR && currentHalf.half === TRANSITION_HALF;
+  return items.filter((d) => {
+    if (d.dealStage !== "クローズ済み") return false;
+    if (isTransitionPeriod) return true;
+    if (!d.contractDate) return true;
+    return d.contractDate >= currentHalf.startDate && d.contractDate <= currentHalf.endDate;
+  });
+}
+
 export default function CurrentPeriodStatus({
   items,
   currentHalfTarget = 0,
-  targetEditor,
+  showGoal = true,
 }: {
   items: HearingListItem[];
   currentHalfTarget?: number;
-  /** ホームで管理者にだけ出す「目標を設定」。商談報告×Hubspot画面では渡さない。 */
-  targetEditor?: React.ReactNode;
+  /** ホームでは売上の進捗を別カード（SalesProgressCard）で出すため、目標ゲージを隠す。 */
+  showGoal?: boolean;
 }) {
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
@@ -40,13 +52,7 @@ export default function CurrentPeriodStatus({
   const halfFirstMeetings = items.filter(
     (d) => d.firstMeetingDate >= currentHalf.startDate && d.firstMeetingDate <= currentHalf.endDate,
   ).length;
-  const isTransitionPeriod = currentHalf.fiscalYear === TRANSITION_FISCAL_YEAR && currentHalf.half === TRANSITION_HALF;
-  const halfContractedDeals = items.filter((d) => {
-    if (d.dealStage !== "クローズ済み") return false;
-    if (isTransitionPeriod) return true;
-    if (!d.contractDate) return true;
-    return d.contractDate >= currentHalf.startDate && d.contractDate <= currentHalf.endDate;
-  });
+  const halfContractedDeals = halfContractedDealsOf(items, now);
   const halfConfirmedRevenue = halfContractedDeals.reduce((sum, d) => sum + (d.expectedRevenue ?? 0), 0);
 
   return (
@@ -62,9 +68,8 @@ export default function CurrentPeriodStatus({
           </span>
         </p>
         </div>
-        {targetEditor}
       </div>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-4 ${showGoal ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
         <div>
           <p className="text-xs text-foreground/50">今月の新規商談数</p>
           <p className="mt-1 text-3xl font-bold tracking-tight">{thisMonthNewDeals}件</p>
@@ -77,17 +82,19 @@ export default function CurrentPeriodStatus({
           <p className="text-xs text-foreground/50">今期の契約締結数</p>
           <p className="mt-1 text-3xl font-bold tracking-tight text-emerald-600">{halfContractedDeals.length}件</p>
         </div>
-        <div className="flex flex-col items-center">
-          <p className="text-xs text-foreground/50">目標までの進捗</p>
-          {currentHalfTarget > 0 ? (
-            <Gauge value={halfConfirmedRevenue} target={currentHalfTarget} label="対目標" valueFormatter={yen} />
-          ) : (
-            <p className="mt-2 text-sm text-foreground/40">
-              目標未設定
-              <span className="ml-1 text-xs">（実績 {yen(halfConfirmedRevenue)}）</span>
-            </p>
-          )}
-        </div>
+        {showGoal && (
+          <div className="flex flex-col items-center">
+            <p className="text-xs text-foreground/50">目標までの進捗</p>
+            {currentHalfTarget > 0 ? (
+              <Gauge value={halfConfirmedRevenue} target={currentHalfTarget} label="対目標" valueFormatter={yen} />
+            ) : (
+              <p className="mt-2 text-sm text-foreground/40">
+                目標未設定
+                <span className="ml-1 text-xs">（実績 {yen(halfConfirmedRevenue)}）</span>
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

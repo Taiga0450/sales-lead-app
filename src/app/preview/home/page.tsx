@@ -4,7 +4,7 @@ import BudgetMiniCard from "@/components/BudgetMiniCard";
 import CurrentPeriodStatus from "@/components/CurrentPeriodStatus";
 import Sidebar from "@/components/Sidebar";
 import NeedsCheckCard from "@/components/NeedsCheckCard";
-import TargetEditor from "@/components/TargetEditor";
+import SalesProgressCard from "@/components/SalesProgressCard";
 import type { PeriodSummary } from "@/lib/homeStats";
 import type { PlanProgress } from "@/lib/callPlans";
 
@@ -68,6 +68,15 @@ export default function HomePreviewPage() {
         <h1 className="text-2xl font-bold tracking-tight">ホーム（プレビュー）</h1>
         <p className="mt-1 text-sm text-foreground/60">サンプルデータでの見た目確認用ページです</p>
       </div>
+      <SalesProgressCard
+        fiscalYear={2026}
+        half="下半期"
+        rangeLabel="10/1〜3/31"
+        target={20000000}
+        actual={7350000}
+        reference={6900000}
+        canEdit
+      />
       <HomeCallStats
         data={{
           month: { current: summary("2026年10月", "10/1〜10/31", 1), previous: summary("2026年9月", "9/1〜9/30", 0.9) },
@@ -77,11 +86,7 @@ export default function HomePreviewPage() {
       <NeedsCheckCard phaseNotUpdated={12} />
       <AreaProgressCard month="2026-10" monthLabel="2026年10月" progress={PROGRESS} canEdit />
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-        <CurrentPeriodStatus
-          items={[]}
-          currentHalfTarget={0}
-          targetEditor={<TargetEditor fiscalYear={2026} half="下半期" kanto={0} osaka={0} />}
-        />
+        <CurrentPeriodStatus items={[]} showGoal={false} />
         <BudgetMiniCard monthLabel="2026年10月" budget={300000} spent={182000} />
       </div>
     </div>
