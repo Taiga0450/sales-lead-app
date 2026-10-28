@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { LEAD_STATUSES } from "@/lib/leads";
 import type { ListConditions } from "./LeadTable";
 import { LIST_CATEGORIES, categoryOf, groupLists, type ListCategory } from "@/lib/savedLists";
@@ -21,14 +21,35 @@ interface SavedList {
 const CATEGORY_LABEL: Record<ListCategory, string> = { 往診代行: "往診代行（ON CALL）", シェアレジ: "シェアレジ" };
 
 /**
- * リストの並び替え・区分の変更。区分ごとに↑↓で順番を入れ替え、「区分を移す」で往診代行⇔シェアレジを切り替える。
+ * リストの並び替え・区分の変更。ドラッグで順番を入れ替え（もう一方の区分へドラッグすれば区分も移る）、
+ * 細かい調整は↑↓、「区分を移す」ボタンでも往診代行⇔シェアレジを切り替えられる。
  */
-function ReorderModal({ lists, onClose, onSaved }: { lists: SavedList[]; onClose: () => void; onSaved: () => void }) {
+export function ReorderModal({ lists, onClose, onSaved }: { lists: SavedList[]; onClose: () => void; onSaved: () => void }) {
   const [draft, setDraft] = useState(() =>
     groupLists(lists).flatMap((g) => g.lists.map((l) => ({ id: l.id, name: l.name, category: g.category }))),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  // ドロップ先の目印：{ category, index }（その区分のindex番目の前に入る。末尾ならlength）
+  const [dropAt, setDropAt] = useState<{ category: ListCategory; index: number } | null>(null);
+
+  /** ドラッグ中のリストを、指定した区分のindex番目の位置へ移す。 */
+  function dropTo(category: ListCategory, index: number) {
+    setDraft((d) => {
+      const item = d.find((x) => x.id === dragId);
+      if (!item) return d;
+      const rest = d.filter((x) => x.id !== item.id);
+      const target = rest.filter((x) => x.category === category);
+      // 同じ区分の中で下へ動かす場合、自分を抜いた分だけ位置が1つ前にずれる
+      const original = d.filter((x) => x.category === category).findIndex((x) => x.id === item.id);
+      const at = original !== -1 && original < index ? index - 1 : index;
+      target.splice(Math.max(0, Math.min(at, target.length)), 0, { ...item, category });
+      return LIST_CATEGORIES.flatMap((c) => (c === category ? target : rest.filter((x) => x.category === c)));
+    });
+    setDragId(null);
+    setDropAt(null);
+  }
 
   function move(id: string, dir: -1 | 1) {
     setDraft((d) => {
@@ -77,17 +98,66 @@ function ReorderModal({ lists, onClose, onSaved }: { lists: SavedList[]; onClose
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-surface p-6 shadow-xl">
         <h2 className="text-lg font-bold">リストの並び替え</h2>
-        <p className="mb-4 text-sm text-foreground/60">↑↓で順番を変え、「区分を移す」で往診代行とシェアレジを切り替えます。</p>
+        <p className="mb-4 text-sm text-foreground/60">
+          ドラッグして順番を入れ替えます。もう一方の区分へドラッグすると、区分も移ります（↑↓でも動かせます）。
+        </p>
         <div className="flex-1 overflow-y-auto pr-1">
           {LIST_CATEGORIES.map((c) => {
             const items = draft.filter((x) => x.category === c);
+            const marker = (index: number) =>
+              dragId && dropAt?.category === c && dropAt.index === index ? (
+                <li aria-hidden className="h-1 rounded-full bg-brand" />
+              ) : null;
             return (
-              <div key={c} className="mb-4">
-                <p className="mb-1.5 text-xs font-bold tracking-wide text-foreground/50">{CATEGORY_LABEL[c]}</p>
-                {items.length === 0 && <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-foreground/40">リストはありません</p>}
+              <div
+                key={c}
+                className={`mb-4 rounded-xl p-1 transition-colors ${dragId && dropAt?.category === c ? "bg-brand-light/50" : ""}`}
+                onDragOver={(e) => {
+                  if (!dragId) return;
+                  e.preventDefault();
+                  // リストの行の上でないところ（見出し・余白）に来たら、その区分の末尾に入れる
+                  if (e.target === e.currentTarget) setDropAt({ category: c, index: items.length });
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragId) dropTo(c, dropAt?.category === c ? dropAt.index : items.length);
+                }}
+              >
+                <p className="mb-1.5 px-1 text-xs font-bold tracking-wide text-foreground/50">{CATEGORY_LABEL[c]}</p>
+                {items.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-border px-3 py-3 text-center text-xs text-foreground/40">
+                    {dragId ? "ここにドロップ" : "リストはありません"}
+                  </p>
+                )}
                 <ul className="flex flex-col gap-1.5">
                   {items.map((x, i) => (
-                    <li key={x.id} className="flex items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                    <Fragment key={x.id}>
+                    {marker(i)}
+                    <li
+                      draggable
+                      onDragStart={(e) => {
+                        setDragId(x.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", x.id);
+                      }}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setDropAt(null);
+                      }}
+                      onDragOver={(e) => {
+                        if (!dragId) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // 行の上半分なら前、下半分なら後ろに入れる
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const after = e.clientY > rect.top + rect.height / 2;
+                        setDropAt({ category: c, index: after ? i + 1 : i });
+                      }}
+                      className={`flex cursor-grab items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm active:cursor-grabbing ${
+                        dragId === x.id ? "opacity-40" : ""
+                      }`}
+                    >
+                      <span aria-hidden className="select-none text-foreground/30">⋮⋮</span>
                       <span className="w-5 text-right text-xs tabular-nums text-foreground/40">{i + 1}</span>
                       <span className="min-w-0 flex-1 truncate font-medium">{x.name}</span>
                       <button
@@ -116,7 +186,9 @@ function ReorderModal({ lists, onClose, onSaved }: { lists: SavedList[]; onClose
                         {c === "往診代行" ? "シェアレジへ移す" : "往診代行へ移す"}
                       </button>
                     </li>
+                    </Fragment>
                   ))}
+                  {marker(items.length)}
                 </ul>
               </div>
             );
