@@ -51,7 +51,10 @@ const NAME_INDEX = LEAD_HEADERS.indexOf("医療機関名");
 const LEAD_LAST_COL = String.fromCharCode("A".charCodeAt(0) + LEAD_HEADERS.length - 1);
 
 const LISTS_SHEET_NAME = "lists";
-const LIST_HEADERS = ["id", "name", "region", "status", "assignee", "keyword", "call", "createdAt"] as const;
+// category（往診代行/シェアレジ）とsortOrder（並び順）は末尾に追加した列。既存行は空欄のままで、
+// 読み出し側（lib/savedLists.ts）が名前から区分を推定し、作成日時順に並べて補う。
+const LIST_HEADERS = ["id", "name", "region", "status", "assignee", "keyword", "call", "createdAt", "category", "sortOrder"] as const;
+const LIST_LAST_COL = String.fromCharCode("A".charCodeAt(0) + LIST_HEADERS.length - 1);
 type ListField = (typeof LIST_HEADERS)[number];
 export type SavedList = Record<ListField, string>;
 
@@ -274,7 +277,7 @@ async function ensureListsSheet(sheets: sheets_v4.Sheets, spreadsheetId: string)
   }
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${LISTS_SHEET_NAME}!A1:H1`,
+    range: `${LISTS_SHEET_NAME}!A1:${LIST_LAST_COL}1`,
     valueInputOption: "RAW",
     requestBody: { values: [[...LIST_HEADERS]] },
   });
@@ -298,7 +301,7 @@ export async function listSavedLists(accessToken: string): Promise<SavedList[]> 
   await ensureListsSheet(sheets, spreadsheetId);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${LISTS_SHEET_NAME}!A2:H`,
+    range: `${LISTS_SHEET_NAME}!A2:${LIST_LAST_COL}`,
   });
   const rows = res.data.values ?? [];
   return rows.filter((row) => row.some((cell) => cell)).map((row) => rowToList(row as string[]));
@@ -306,16 +309,24 @@ export async function listSavedLists(accessToken: string): Promise<SavedList[]> 
 
 export async function createSavedList(
   accessToken: string,
-  list: Omit<SavedList, "id" | "createdAt">,
+  list: Omit<SavedList, "id" | "createdAt" | "sortOrder">,
 ): Promise<SavedList> {
   const { spreadsheetId } = await ensureSpreadsheet(accessToken);
   const sheets = getSheets(accessToken);
   await ensureListsSheet(sheets, spreadsheetId);
 
-  const newList: SavedList = { ...list, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+  // 新しいリストは、同じ区分の一番下に並ぶ
+  const existing = await listSavedLists(accessToken);
+  const maxOrder = existing.reduce((m, l) => Math.max(m, Number(l.sortOrder) || 0), 0);
+  const newList: SavedList = {
+    ...list,
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    sortOrder: String(maxOrder + 1),
+  };
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${LISTS_SHEET_NAME}!A:H`,
+    range: `${LISTS_SHEET_NAME}!A:${LIST_LAST_COL}`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [listToRow(newList)] },
@@ -343,6 +354,28 @@ export async function renameSavedList(accessToken: string, id: string, name: str
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[name]] },
   });
+}
+
+/** リストの並び順と区分をまとめて保存する（リード一覧の「並び替え」から）。渡されなかったリストは変更しない。 */
+export async function reorderSavedLists(
+  accessToken: string,
+  items: { id: string; category: string; sortOrder: number }[],
+): Promise<void> {
+  const { spreadsheetId } = await ensureSpreadsheet(accessToken);
+  const sheets = getSheets(accessToken);
+  await ensureListsSheet(sheets, spreadsheetId);
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${LISTS_SHEET_NAME}!A2:A` });
+  const ids = (res.data.values ?? []).map((r) => r[0]);
+  const catCol = String.fromCharCode("A".charCodeAt(0) + LIST_HEADERS.indexOf("category"));
+  const data = items
+    .map((item) => ({ item, rowIndex: ids.indexOf(item.id) }))
+    .filter(({ rowIndex }) => rowIndex !== -1)
+    .map(({ item, rowIndex }) => ({
+      range: `${LISTS_SHEET_NAME}!${catCol}${rowIndex + 2}:${LIST_LAST_COL}${rowIndex + 2}`,
+      values: [[item.category, String(item.sortOrder)]],
+    }));
+  if (data.length === 0) return;
+  await sheets.spreadsheets.values.batchUpdate({ spreadsheetId, requestBody: { valueInputOption: "RAW", data } });
 }
 
 export async function deleteSavedList(accessToken: string, id: string): Promise<void> {

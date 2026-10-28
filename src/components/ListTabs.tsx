@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { LEAD_STATUSES } from "@/lib/leads";
 import type { ListConditions } from "./LeadTable";
+import { LIST_CATEGORIES, categoryOf, groupLists, type ListCategory } from "@/lib/savedLists";
 
 interface SavedList {
   id: string;
@@ -12,6 +13,132 @@ interface SavedList {
   keyword: string;
   call: string;
   assignee: string;
+  category?: string;
+  sortOrder?: string;
+  createdAt?: string;
+}
+
+const CATEGORY_LABEL: Record<ListCategory, string> = { 往診代行: "往診代行（ON CALL）", シェアレジ: "シェアレジ" };
+
+/**
+ * リストの並び替え・区分の変更。区分ごとに↑↓で順番を入れ替え、「区分を移す」で往診代行⇔シェアレジを切り替える。
+ */
+function ReorderModal({ lists, onClose, onSaved }: { lists: SavedList[]; onClose: () => void; onSaved: () => void }) {
+  const [draft, setDraft] = useState(() =>
+    groupLists(lists).flatMap((g) => g.lists.map((l) => ({ id: l.id, name: l.name, category: g.category }))),
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function move(id: string, dir: -1 | 1) {
+    setDraft((d) => {
+      const item = d.find((x) => x.id === id)!;
+      const same = d.filter((x) => x.category === item.category);
+      const i = same.indexOf(item);
+      const j = i + dir;
+      if (j < 0 || j >= same.length) return d;
+      [same[i], same[j]] = [same[j], same[i]];
+      return LIST_CATEGORIES.flatMap((c) => (c === item.category ? same : d.filter((x) => x.category === c)));
+    });
+  }
+
+  function switchCategory(id: string) {
+    setDraft((d) => {
+      const item = d.find((x) => x.id === id)!;
+      const next: ListCategory = item.category === "往診代行" ? "シェアレジ" : "往診代行";
+      const rest = d.filter((x) => x.id !== id);
+      return LIST_CATEGORIES.flatMap((c) => [
+        ...rest.filter((x) => x.category === c),
+        ...(c === next ? [{ ...item, category: next }] : []),
+      ]);
+    });
+  }
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/lists/order", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: draft.map((x) => ({ id: x.id, category: x.category })) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "保存に失敗しました");
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存に失敗しました");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-surface p-6 shadow-xl">
+        <h2 className="text-lg font-bold">リストの並び替え</h2>
+        <p className="mb-4 text-sm text-foreground/60">↑↓で順番を変え、「区分を移す」で往診代行とシェアレジを切り替えます。</p>
+        <div className="flex-1 overflow-y-auto pr-1">
+          {LIST_CATEGORIES.map((c) => {
+            const items = draft.filter((x) => x.category === c);
+            return (
+              <div key={c} className="mb-4">
+                <p className="mb-1.5 text-xs font-bold tracking-wide text-foreground/50">{CATEGORY_LABEL[c]}</p>
+                {items.length === 0 && <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-foreground/40">リストはありません</p>}
+                <ul className="flex flex-col gap-1.5">
+                  {items.map((x, i) => (
+                    <li key={x.id} className="flex items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                      <span className="w-5 text-right text-xs tabular-nums text-foreground/40">{i + 1}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium">{x.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => move(x.id, -1)}
+                        disabled={i === 0}
+                        title="上へ"
+                        className="h-7 w-7 rounded-md border border-border text-foreground/60 hover:bg-brand-light disabled:opacity-30"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => move(x.id, 1)}
+                        disabled={i === items.length - 1}
+                        title="下へ"
+                        className="h-7 w-7 rounded-md border border-border text-foreground/60 hover:bg-brand-light disabled:opacity-30"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => switchCategory(x.id)}
+                        className="rounded-md border border-border px-2 py-1 text-[11px] text-foreground/60 hover:bg-brand-light"
+                      >
+                        {c === "往診代行" ? "シェアレジへ移す" : "往診代行へ移す"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex items-center justify-end gap-3">
+          {error && <span className="text-sm text-red-600">{error}</span>}
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-foreground/60 hover:bg-zinc-50">
+            閉じる
+          </button>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {saving ? "保存中..." : "並び順を保存"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function toConditions(list: SavedList): ListConditions {
@@ -45,6 +172,8 @@ export default function ListTabs({
   const [keyword, setKeyword] = useState("");
   const [call, setCall] = useState("all");
   const [assignee, setAssignee] = useState("");
+  const [category, setCategory] = useState<ListCategory>("往診代行");
+  const [reordering, setReordering] = useState(false);
 
   async function loadLists() {
     try {
@@ -92,6 +221,7 @@ export default function ListTabs({
     setKeyword("");
     setCall("all");
     setAssignee("");
+    setCategory("往診代行");
     setError(null);
   }
 
@@ -103,7 +233,7 @@ export default function ListTabs({
       const res = await fetch("/api/lists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, region, status, keyword, call, assignee }),
+        body: JSON.stringify({ name, region, status, keyword, call, assignee, category }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "作成に失敗しました");
@@ -169,12 +299,28 @@ export default function ListTabs({
         className="min-w-[160px] rounded-lg border border-border px-3 py-1.5 text-sm font-medium outline-none focus:border-brand"
       >
         <option value="">すべて</option>
-        {lists.map((list) => (
-          <option key={list.id} value={list.id}>
-            {list.name}
-          </option>
-        ))}
+        {groupLists(lists)
+          .filter((g) => g.lists.length > 0)
+          .map((g) => (
+            <optgroup key={g.category} label={CATEGORY_LABEL[g.category]}>
+              {g.lists.map((list) => (
+                <option key={list.id} value={list.id}>
+                  {list.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
       </select>
+
+      {activeList && (
+        <span
+          className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+            categoryOf(activeList) === "シェアレジ" ? "bg-violet-100 text-violet-700" : "bg-brand-light text-brand"
+          }`}
+        >
+          {CATEGORY_LABEL[categoryOf(activeList)]}
+        </span>
+      )}
 
       {activeList && (
         <>
@@ -205,6 +351,27 @@ export default function ListTabs({
         + リストを作成
       </button>
 
+      {lists.length > 1 && (
+        <button
+          type="button"
+          onClick={() => setReordering(true)}
+          className="rounded-full border border-border px-3.5 py-1.5 text-sm font-medium text-foreground/60 hover:bg-brand-light"
+        >
+          並び替え
+        </button>
+      )}
+
+      {reordering && (
+        <ReorderModal
+          lists={lists}
+          onClose={() => setReordering(false)}
+          onSaved={() => {
+            setReordering(false);
+            void loadLists();
+          }}
+        />
+      )}
+
       {error && !open && <span className="text-sm text-red-600">{error}</span>}
 
       {open && (
@@ -226,6 +393,24 @@ export default function ListTabs({
                   className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-brand"
                 />
               </label>
+
+              <div className="flex flex-col gap-1.5 text-sm font-medium">
+                区分
+                <div className="flex gap-2">
+                  {LIST_CATEGORIES.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCategory(c)}
+                      className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
+                        category === c ? "border-brand bg-brand text-white" : "border-border text-foreground/60 hover:bg-brand-light"
+                      }`}
+                    >
+                      {CATEGORY_LABEL[c]}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <label className="flex flex-col gap-1.5 text-sm font-medium">
                 地域（部分一致・複数はカンマ区切り・任意）

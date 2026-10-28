@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     assignee?: string;
     keyword?: string;
     call?: string;
+    category?: string;
   };
 
   const name = body.name?.trim();
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
       assignee: body.assignee?.trim() ?? "",
       keyword: body.keyword?.trim() ?? "",
       call: body.call ?? "all",
+      category: body.category === "シェアレジ" ? "シェアレジ" : "往診代行",
     });
     return NextResponse.json({ list });
   } catch (error) {
