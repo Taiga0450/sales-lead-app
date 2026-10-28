@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { LEAD_STATUSES } from "@/lib/leads";
 import type { ListConditions } from "./LeadTable";
-import { LIST_CATEGORIES, categoryOf, groupLists, type ListCategory } from "@/lib/savedLists";
+import { LIST_CATEGORIES, categoryOf, groupLists, prefectureOf, type ListCategory } from "@/lib/savedLists";
 
 interface SavedList {
   id: string;
@@ -371,16 +371,23 @@ export default function ListTabs({
         className="min-w-[160px] rounded-lg border border-border px-3 py-1.5 text-sm font-medium outline-none focus:border-brand"
       >
         <option value="">すべて</option>
+        {/* <hr>は<select>直下でしか使えない（<optgroup>内はhydrationエラー）ため、区分見出しは選べない<option>にする。
+            区分の境目には区切り線、県が変わるところには「── 東京都 ──」の選べない見出しを入れる */}
         {groupLists(lists)
           .filter((g) => g.lists.length > 0)
-          .map((g) => (
-            <optgroup key={g.category} label={CATEGORY_LABEL[g.category]}>
-              {g.lists.map((list) => (
-                <option key={list.id} value={list.id}>
-                  {list.name}
-                </option>
+          .map((g, gi) => (
+            <Fragment key={g.category}>
+              {gi > 0 && <hr />}
+              <option disabled>{CATEGORY_LABEL[g.category]}</option>
+              {g.lists.map((list, i) => (
+                <Fragment key={list.id}>
+                  {prefectureOf(list) && (i === 0 || prefectureOf(list) !== prefectureOf(g.lists[i - 1])) && (
+                    <option disabled>── {prefectureOf(list)} ──</option>
+                  )}
+                  <option value={list.id}>{list.name}</option>
+                </Fragment>
               ))}
-            </optgroup>
+            </Fragment>
           ))}
       </select>
 
