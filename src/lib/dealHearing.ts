@@ -31,6 +31,8 @@ export const DEAL_HEARING_HEADERS = [
   "dealStage",
   "contractDate",
   "createdAt",
+  // 後から追加した列（既存行の列位置を変えないよう末尾に足す）
+  "dealType",
 ] as const;
 
 export type DealHearingField = (typeof DEAL_HEARING_HEADERS)[number];
@@ -50,6 +52,10 @@ export const DEAL_STAGES = ["初回商談", "見積提出", "口頭受注", "ク
 export type DealStage = (typeof DEAL_STAGES)[number];
 export const LOST_STAGE = "失注" as const;
 export type DealStageOrLost = DealStage | typeof LOST_STAGE | "";
+
+/** 商談タイプ。HubSpotの`keiyakutaipu`（ラベル「商談タイプ」）のenum値と同じ。 */
+export const DEAL_TYPES = ["新規", "アップセル"] as const;
+export type DealType = (typeof DEAL_TYPES)[number];
 
 /** 商談報告×Hubspot画面の「取引担当者」選択肢。今のところ森・富田の2名のみ。 */
 export const DEAL_OWNERS = ["森", "富田"] as const;
@@ -78,6 +84,7 @@ export interface HearingListItem {
   hearingNotes: string;
   dealStage: DealStageOrLost;
   contractDate: string;
+  dealType: DealType | "";
 }
 
 export interface FiscalHalf {
@@ -138,5 +145,6 @@ export function dealHearingRowToListItem(row: DealHearingRow): HearingListItem {
     hearingNotes: row.hearingNotes,
     dealStage: (row.dealStage as DealStageOrLost) || "",
     contractDate: row.contractDate,
+    dealType: DEAL_TYPES.includes(row.dealType as DealType) ? (row.dealType as DealType) : "",
   };
 }

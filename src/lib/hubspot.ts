@@ -1,5 +1,12 @@
 import type { LeadRow } from "./leads";
-import { HEARING_CATEGORIES, type HearingCategory, type DealStage, type DealStageOrLost } from "./dealHearing";
+import {
+  HEARING_CATEGORIES,
+  DEAL_TYPES,
+  type HearingCategory,
+  type DealStage,
+  type DealStageOrLost,
+  type DealType,
+} from "./dealHearing";
 
 export { HEARING_CATEGORIES };
 export type { HearingCategory };
@@ -142,6 +149,8 @@ export const HEARING_PROPERTIES = {
   dealStage: "dealstage",
   /** 売上ダッシュボード（getRevenueStats）が使うCONTRACT_DATE_PROPERTYと同一プロパティ。 */
   contractDate: "keiyakuteiketsubi",
+  /** ラベル「商談タイプ」。enum値は「新規」「アップセル」。 */
+  dealType: "keiyakutaipu",
 } as const;
 
 /**
@@ -219,6 +228,7 @@ export interface DealHearingContent {
   hearingNotes: string;
   dealStage: DealStageOrLost;
   contractDate: string;
+  dealType: DealType | "";
 }
 
 interface HubspotHearingDeal {
@@ -263,6 +273,9 @@ function toHearingContent(deal: HubspotHearingDeal): DealHearingContent {
     hearingNotes: p[HEARING_PROPERTIES.hearingNotes] ?? "",
     dealStage: (p.dealstage && HUBSPOT_TO_DEAL_STAGE[p.dealstage]) || "",
     contractDate: p[HEARING_PROPERTIES.contractDate] ?? "",
+    dealType: DEAL_TYPES.includes(p[HEARING_PROPERTIES.dealType] as DealType)
+      ? (p[HEARING_PROPERTIES.dealType] as DealType)
+      : "",
   };
 }
 
@@ -709,6 +722,7 @@ export async function updateDealHearingContent(
     properties[HEARING_PROPERTIES.visitsPerMonth] = String(fields.visitsPerMonth);
   }
   if (fields.hearingNotes !== undefined) properties[HEARING_PROPERTIES.hearingNotes] = fields.hearingNotes;
+  if (fields.dealType !== undefined) properties[HEARING_PROPERTIES.dealType] = fields.dealType;
 
   const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/${dealId}`, {
     method: "PATCH",
@@ -805,6 +819,7 @@ export async function createHearingDeal(
     properties[HEARING_PROPERTIES.visitsPerMonth] = String(fields.visitsPerMonth);
   }
   if (fields.hearingNotes) properties[HEARING_PROPERTIES.hearingNotes] = fields.hearingNotes;
+  if (fields.dealType) properties[HEARING_PROPERTIES.dealType] = fields.dealType;
 
   const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals`, {
     method: "POST",

@@ -693,6 +693,7 @@ export async function upsertDealHearingRowForDeal(
     status: "",
     dealStage: deal.dealStage,
     contractDate: deal.contractDate,
+    dealType: deal.dealType,
   };
 
   const existingRows = await listDealHearings(accessToken);

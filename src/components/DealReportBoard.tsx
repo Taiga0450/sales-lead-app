@@ -9,10 +9,12 @@ import DealTaskForm from "./DealTaskForm";
 import {
   DEAL_STAGES,
   DEAL_OWNERS,
+  DEAL_TYPES,
   LOST_STAGE,
   fiscalHalfOf,
   type HearingListItem,
   type HearingCategory,
+  type DealType,
 } from "@/lib/dealHearing";
 
 /**
@@ -31,6 +33,33 @@ const CATEGORY_COLORS: Record<string, string> = {
   自院完結: "#a1a1aa",
   その他: "#818cf8",
 };
+/** 商談タイプの色はHubSpot上の表示（新規=青、アップセル=赤）に合わせる。 */
+const DEAL_TYPE_COLORS: Record<DealType, string> = {
+  新規: "#0b6fde",
+  アップセル: "#b0062c",
+};
+
+/** 商談タイプ（新規/アップセル）の選択ボタン。選択中のボタンをもう一度押すと未設定に戻す。 */
+function DealTypeButtons({ value, onChange }: { value: DealType | ""; onChange: (value: DealType | "") => void }) {
+  return (
+    <div className="flex gap-1">
+      {DEAL_TYPES.map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => onChange(value === t ? "" : t)}
+          className={`flex-1 rounded-lg border px-2 py-1.5 text-sm font-medium transition ${
+            value === t ? "border-transparent text-white" : "border-border text-foreground/60 hover:bg-brand-light"
+          }`}
+          style={value === t ? { backgroundColor: DEAL_TYPE_COLORS[t] } : undefined}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const PROBABILITY_OPTIONS = ["A", "B", "C", "D"];
 const PROBABILITY_LABELS: Record<string, string> = {
   A: "A（80％以上）",
@@ -122,6 +151,7 @@ function LinkHubSpotButton({
           hearingNotes: form.hearingNotes,
           dealStage: form.dealStage,
           contractDate: form.contractDate,
+          dealType: form.dealType,
         }),
       });
       const data = await res.json();
@@ -233,6 +263,7 @@ function DealCard({
       hearingNotes: form.hearingNotes,
       dealStage: form.dealStage,
       contractDate: form.contractDate,
+      dealType: form.dealType,
     };
     try {
       const res = await fetch(`/api/deal-report/${form.id}`, {
@@ -274,6 +305,14 @@ function DealCard({
               style={{ backgroundColor: CATEGORY_COLORS[form.category] }}
             >
               {CATEGORY_OPTIONS.find((c) => c.value === form.category)?.label ?? form.category}
+            </span>
+          )}
+          {form.dealType && (
+            <span
+              className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
+              style={{ backgroundColor: DEAL_TYPE_COLORS[form.dealType] }}
+            >
+              {form.dealType}
             </span>
           )}
         </div>
@@ -391,6 +430,10 @@ function DealCard({
                     </button>
                   ))}
                 </div>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-foreground/50">
+                商談タイプ
+                <DealTypeButtons value={form.dealType} onChange={(v) => set("dealType", v)} />
               </label>
               <label className="flex flex-col gap-1 text-xs text-foreground/50">
                 検討プラン
@@ -601,6 +644,7 @@ const EMPTY_FORM: Omit<HearingListItem, "id" | "dealname" | "source"> = {
   hearingNotes: "",
   dealStage: "",
   contractDate: "",
+  dealType: "",
 };
 
 function AddDealModal({
@@ -706,6 +750,10 @@ function AddDealModal({
                   </button>
                 ))}
               </div>
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-medium">
+              商談タイプ
+              <DealTypeButtons value={form.dealType} onChange={(v) => set("dealType", v)} />
             </label>
             <label className="flex flex-col gap-1.5 text-sm font-medium">
               初回商談完了日

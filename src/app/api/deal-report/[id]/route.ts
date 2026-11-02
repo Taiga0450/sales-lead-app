@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession, requireAccessToken } from "@/lib/session";
 import { updateDealHearingContent, deleteHearingDeal, type DealHearingContent } from "@/lib/hubspot";
 import { updateDealHearing, deleteDealHearing, deleteDealHearingByHubspotId } from "@/lib/google/sheets";
-import { HEARING_CATEGORIES, type DealHearingRow } from "@/lib/dealHearing";
+import { HEARING_CATEGORIES, DEAL_TYPES, type DealHearingRow } from "@/lib/dealHearing";
 
 type HearingBody = { source?: "hubspot" | "sheet" } & Partial<Omit<DealHearingContent, "id">>;
 
@@ -35,6 +35,7 @@ function toSheetPatch(body: HearingBody): Partial<DealHearingRow> {
     patch.visitsPerMonth = body.visitsPerMonth === null ? "" : String(body.visitsPerMonth);
   }
   if (body.hearingNotes !== undefined) patch.hearingNotes = body.hearingNotes;
+  if (body.dealType !== undefined) patch.dealType = body.dealType;
   return patch;
 }
 
@@ -45,6 +46,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/deal-report
 
   if (body.category && !HEARING_CATEGORIES.includes(body.category)) {
     return NextResponse.json({ error: "不正なカテゴリです" }, { status: 400 });
+  }
+  if (body.dealType && !DEAL_TYPES.includes(body.dealType)) {
+    return NextResponse.json({ error: "不正な商談タイプです" }, { status: 400 });
   }
   if (body.dealname !== undefined && !body.dealname.trim()) {
     return NextResponse.json({ error: "機関名を入力してください" }, { status: 400 });

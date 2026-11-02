@@ -27,6 +27,7 @@ function fillBlanksFromSheet(hubspotItem: HearingListItem, sheetItem: HearingLis
     hearingNotes: hubspotItem.hearingNotes || sheetItem.hearingNotes,
     dealStage: hubspotItem.dealStage || sheetItem.dealStage,
     contractDate: hubspotItem.contractDate || sheetItem.contractDate,
+    dealType: hubspotItem.dealType || sheetItem.dealType,
   };
 }
 
