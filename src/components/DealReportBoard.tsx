@@ -833,7 +833,8 @@ export default function DealReportBoard({
   // その期間の開始日・終了日を日付欄に自動入力するだけのショートカット。
   // 開始日・終了日の入力欄は常に表示し、両方空なら絞り込みなしとして扱う
   // （「対象」の切り替えだけで日付欄が隠れて見つけづらくなるのを防ぐため）。
-  const [periodField, setPeriodField] = useState<"firstMeetingDate" | "contractDate">("firstMeetingDate");
+  // 「全体」は初回商談日・契約締結日のどちらかが期間内なら対象にする。
+  const [periodField, setPeriodField] = useState<"all" | "firstMeetingDate" | "contractDate">("firstMeetingDate");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");
 
@@ -933,7 +934,9 @@ export default function DealReportBoard({
     let base = q ? items.filter((d) => d.dealname.includes(q)) : items;
 
     if (periodFrom || periodTo) {
-      base = base.filter((d) => dateInPeriod(d[periodField]));
+      base = base.filter((d) =>
+        periodField === "all" ? dateInPeriod(d.firstMeetingDate) || dateInPeriod(d.contractDate) : dateInPeriod(d[periodField]),
+      );
     }
 
     if (stageFilter) {
@@ -1149,6 +1152,7 @@ export default function DealReportBoard({
                 onChange={(e) => setPeriodField(e.target.value as typeof periodField)}
                 className="rounded-lg border border-border px-3 py-1.5 text-sm outline-none focus:border-brand"
               >
+                <option value="all">全体</option>
                 <option value="contractDate">契約締結日</option>
                 <option value="firstMeetingDate">初回商談日</option>
               </select>
