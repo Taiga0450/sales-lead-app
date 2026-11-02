@@ -833,10 +833,11 @@ export default function DealReportBoard({
   // その期間の開始日・終了日を日付欄に自動入力するだけのショートカット。
   // 開始日・終了日の入力欄は常に表示し、両方空なら絞り込みなしとして扱う
   // （「対象」の切り替えだけで日付欄が隠れて見つけづらくなるのを防ぐため）。
-  // 「全体」は初回商談日・契約締結日のどちらかが期間内なら対象にする。
-  const [periodField, setPeriodField] = useState<"all" | "firstMeetingDate" | "contractDate">("firstMeetingDate");
+  // 「すべて」（初期値）は期間で絞り込まず全件を見る。日付欄は無効になり、入力済みの日付も使わない。
+  const [periodField, setPeriodField] = useState<"all" | "firstMeetingDate" | "contractDate">("all");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");
+  const periodActive = periodField !== "all" && Boolean(periodFrom || periodTo);
 
   // 取引ステージでの絞り込み
   const [stageFilter, setStageFilter] = useState<"" | (typeof DEAL_STAGES)[number] | typeof LOST_STAGE>("");
@@ -933,10 +934,8 @@ export default function DealReportBoard({
     const q = search.trim();
     let base = q ? items.filter((d) => d.dealname.includes(q)) : items;
 
-    if (periodFrom || periodTo) {
-      base = base.filter((d) =>
-        periodField === "all" ? dateInPeriod(d.firstMeetingDate) || dateInPeriod(d.contractDate) : dateInPeriod(d[periodField]),
-      );
+    if (periodField !== "all" && (periodFrom || periodTo)) {
+      base = base.filter((d) => dateInPeriod(d[periodField]));
     }
 
     if (stageFilter) {
@@ -1045,7 +1044,7 @@ export default function DealReportBoard({
   // 期間で絞り込み中の場合のみ、その期間内に初回商談・契約締結した件数を「期間内の進捗」として出す
   // （取引ステージの変化日時そのものは記録していないため、記録がある2つの日付での近似値）。
   const periodProgress =
-    periodFrom || periodTo
+    periodActive
       ? {
           firstMeetings: filtered.filter((d) => dateInPeriod(d.firstMeetingDate)).length,
           contracts: filtered.filter((d) => dateInPeriod(d.contractDate)).length,
@@ -1152,7 +1151,7 @@ export default function DealReportBoard({
                 onChange={(e) => setPeriodField(e.target.value as typeof periodField)}
                 className="rounded-lg border border-border px-3 py-1.5 text-sm outline-none focus:border-brand"
               >
-                <option value="all">全体</option>
+                <option value="all">すべて</option>
                 <option value="contractDate">契約締結日</option>
                 <option value="firstMeetingDate">初回商談日</option>
               </select>
@@ -1160,14 +1159,16 @@ export default function DealReportBoard({
                 type="date"
                 value={periodFrom}
                 onChange={(e) => setPeriodFrom(e.target.value)}
-                className="rounded-lg border border-border px-3 py-1.5 text-sm outline-none focus:border-brand"
+                disabled={periodField === "all"}
+                className="rounded-lg border border-border px-3 py-1.5 text-sm outline-none focus:border-brand disabled:opacity-40"
               />
               <span className="text-xs text-foreground/40">〜</span>
               <input
                 type="date"
                 value={periodTo}
                 onChange={(e) => setPeriodTo(e.target.value)}
-                className="rounded-lg border border-border px-3 py-1.5 text-sm outline-none focus:border-brand"
+                disabled={periodField === "all"}
+                className="rounded-lg border border-border px-3 py-1.5 text-sm outline-none focus:border-brand disabled:opacity-40"
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1200,10 +1201,11 @@ export default function DealReportBoard({
                 ))}
               </select>
             </div>
-            {(periodFrom || periodTo || stageFilter || ownerFilter) && (
+            {(periodActive || stageFilter || ownerFilter) && (
               <button
                 type="button"
                 onClick={() => {
+                  setPeriodField("all");
                   setPeriodFrom("");
                   setPeriodTo("");
                   setStageFilter("");
@@ -1215,7 +1217,7 @@ export default function DealReportBoard({
               </button>
             )}
           </div>
-          {periodField === "contractDate" && (periodFrom || periodTo) && (
+          {periodField === "contractDate" && periodActive && (
             <p className="text-[11px] text-foreground/40">
               ※ 契約締結日が未入力の商談（成約済みだが日付未記録）はこの期間絞り込みには含まれません。件数・売上を全体で見たい場合は上の「確定売上（契約締結済み）」をご覧ください。
             </p>
@@ -1228,11 +1230,13 @@ export default function DealReportBoard({
                   key={p.label}
                   type="button"
                   onClick={() => {
+                    // 「すべて」のままだと期間が効かないため、基準を初回商談日に切り替える
+                    if (periodField === "all") setPeriodField("firstMeetingDate");
                     setPeriodFrom(p.from);
                     setPeriodTo(p.to);
                   }}
                   className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                    periodFrom === p.from && periodTo === p.to
+                    periodActive && periodFrom === p.from && periodTo === p.to
                       ? "bg-brand text-white"
                       : "border border-border text-foreground/60 hover:bg-brand-light"
                   }`}
